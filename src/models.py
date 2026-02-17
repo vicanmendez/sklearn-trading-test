@@ -5,21 +5,33 @@ from sklearn.metrics import accuracy_score, precision_score, recall_score, class
 import pandas as pd
 import numpy as np
 
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
+
 def train_models(X_train, y_train):
     """
-    Train multiple models and return a dictionary of trained models.
+    Train multiple models using Pipelines (Scaler + Classifier) and return a dictionary of trained pipelines.
     """
     models = {
-        'LogisticRegression': LogisticRegression(max_iter=1000),
-        'RandomForest': RandomForestClassifier(n_estimators=100, random_state=42),
-        'GradientBoosting': GradientBoostingClassifier(n_estimators=100, random_state=42)
+        'LogisticRegression': Pipeline([
+            ('scaler', StandardScaler()),
+            ('clf', LogisticRegression(max_iter=1000))
+        ]),
+        'RandomForest': Pipeline([
+            ('scaler', StandardScaler()),
+            ('clf', RandomForestClassifier(n_estimators=100, random_state=42))
+        ]),
+        'GradientBoosting': Pipeline([
+            ('scaler', StandardScaler()),
+            ('clf', GradientBoostingClassifier(n_estimators=100, random_state=42))
+        ])
     }
     
     trained_models = {}
-    for name, model in models.items():
-        print(f"Training {name}...")
-        model.fit(X_train, y_train)
-        trained_models[name] = model
+    for name, pipeline in models.items():
+        print(f"Training {name} with Pipeline...")
+        pipeline.fit(X_train, y_train)
+        trained_models[name] = pipeline
         
     return trained_models
 
@@ -33,8 +45,8 @@ def evaluate_models(models, X_test, y_test):
         y_pred = model.predict(X_test)
         
         acc = accuracy_score(y_test, y_pred)
-        prec = precision_score(y_test, y_pred, zero_division=0)
-        rec = recall_score(y_test, y_pred, zero_division=0)
+        prec = precision_score(y_test, y_pred, average='weighted', zero_division=0)
+        rec = recall_score(y_test, y_pred, average='weighted', zero_division=0)
         
         results.append({
             'Model': name,

@@ -24,7 +24,13 @@ def add_technical_indicators(df):
     
     # SMA / EMA
     df['sma_20'] = ta.trend.SMAIndicator(df['close'], window=20).sma_indicator()
+    df['sma_50'] = ta.trend.SMAIndicator(df['close'], window=50).sma_indicator()
+    df['sma_200'] = ta.trend.SMAIndicator(df['close'], window=200).sma_indicator()
     df['ema_12'] = ta.trend.EMAIndicator(df['close'], window=12).ema_indicator()
+    
+    # Trend Strength & Volatility
+    df['adx'] = ta.trend.ADXIndicator(df['high'], df['low'], df['close'], window=14).adx()
+    df['atr'] = ta.volatility.AverageTrueRange(df['high'], df['low'], df['close'], window=14).average_true_range()
     
     return df
 

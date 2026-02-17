@@ -4,10 +4,13 @@ import os
 import time
 from datetime import datetime
 
-def fetch_data(symbol='BTC/USDT', timeframe='1h', start_date='2020-01-01'):
+def fetch_data(symbol='BTC/USDT', timeframe='1h', start_date='2020-01-01', interval=None):
     """
     Fetch historical OHLCV data from Binance using CCXT with pagination.
     """
+    if interval:
+        timeframe = interval
+        
     print(f"Fetching {symbol} data from Binance ({timeframe}) starting from {start_date}...")
     exchange = ccxt.binance()
     

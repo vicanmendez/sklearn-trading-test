@@ -11,6 +11,9 @@ from features import add_technical_indicators, create_target, preprocess_data
 from models import train_models, get_best_model, save_model, load_model
 from strategy import TradingStrategy
 from backtest import Backtester
+from simulator import RealTimeSimulator
+from real_trading import RealTradingBot
+import config
 
 # Global variable for current symbol
 CURRENT_SYMBOL = 'BTC/USDT'
@@ -81,7 +84,7 @@ def train_workflow(df):
     # Features columns should be global or passed
     # FEATURES_COLUMNS is defined at top of file
     FEATURES_COLUMNS = ['rsi', 'macd', 'macd_signal', 'macd_diff', 
-                        'bb_high', 'bb_low', 'bb_mavg', 'sma_20', 'ema_12']
+                        'bb_high', 'bb_low', 'bb_mavg', 'sma_20', 'ema_12', 'adx']
 
     X = train_df[FEATURES_COLUMNS]
     y = train_df['target']
@@ -143,7 +146,7 @@ def backtest_workflow(df, model):
         return
     
     FEATURES_COLUMNS = ['rsi', 'macd', 'macd_signal', 'macd_diff', 
-                        'bb_high', 'bb_low', 'bb_mavg', 'sma_20', 'ema_12']
+                        'bb_high', 'bb_low', 'bb_mavg', 'sma_20', 'ema_12', 'adx']
                         
     strategy = TradingStrategy(model, buy_threshold=0.55, sell_threshold=0.45)
     results_df = strategy.backtest(test_df, FEATURES_COLUMNS)
@@ -153,6 +156,57 @@ def backtest_workflow(df, model):
     
     backtester.print_performance_metrics(final_df)
     backtester.plot_results(final_df)
+
+def real_time_simulation_workflow(model, symbol):
+    if model is None:
+        print("No model loaded. Please train or load a model first.")
+        return
+
+    print("\n--- Real-Time Simulation ---")
+    print(f"Symbol: {symbol}")
+    print(f"Timeframe: {config.TIMEFRAME}")
+    print("Press Ctrl+C to stop.")
+    
+    sim = RealTimeSimulator(model, symbol, config)
+    sim.start()
+
+def start_real_trading_workflow(model, symbol):
+    if model is None:
+        print("No model loaded. Please train or load a model first.")
+        return
+
+    print("\n⚠️ --- REAL TRADING MODE --- ⚠️")
+    print("WARNING: This mode will execute REAL trades on Binance using your API keys.")
+    confirm = input("Are you sure you want to proceed? (yes/no): ").lower()
+    if confirm != 'yes':
+        print("Aborted.")
+        return
+
+    mode = input("Select Mode (SPOT/FUTURES) [Default: SPOT]: ").strip().upper() or 'SPOT'
+    
+    # API Key Handling
+    if config.BINANCE_API_KEY == "YOUR_BINANCE_API_KEY":
+        print("API Keys not configured in config.py.")
+        api_key = input("Enter Binance API Key: ").strip()
+        api_secret = input("Enter Binance API Secret: ").strip()
+        
+        # Temporary config override
+        class TempConfig:
+            def __getattr__(self, name):
+                return getattr(config, name)
+        
+        temp_config = TempConfig()
+        temp_config.BINANCE_API_KEY = api_key
+        temp_config.BINANCE_API_SECRET = api_secret
+        used_config = temp_config
+    else:
+        used_config = config
+
+    try:
+        bot = RealTradingBot(model, symbol, used_config, mode=mode)
+        bot.start()
+    except Exception as e:
+        print(f"Failed to start Real Trading Bot: {e}")
 
 def main():
     print("Initializing...")
@@ -174,7 +228,9 @@ def main():
         print("2. Load Existing Model")
         print("3. Backtest Model")
         print("4. Change Symbol / Update Data")
-        print("5. Exit")
+        print("5. Start Real-Time Simulation")
+        print("6. Start REAL Trading (Binance)")
+        print("7. Exit")
         
         choice = input("Select option: ")
         
@@ -199,6 +255,16 @@ def main():
             if new_df is not None:
                 df = new_df
         elif choice == '5':
+            if current_model:
+                real_time_simulation_workflow(current_model, CURRENT_SYMBOL)
+            else:
+                print("Please load or train a model first.")
+        elif choice == '6':
+            if current_model:
+                start_real_trading_workflow(current_model, CURRENT_SYMBOL)
+            else:
+                print("Please load or train a model first.")
+        elif choice == '7':
             print("Exiting.")
             break
         else:
