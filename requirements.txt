@@ -1,6 +1,7 @@
-ccxt
+ ccxt
 pandas
 numpy
 scikit-learn
 ta
 matplotlib
+yfinance

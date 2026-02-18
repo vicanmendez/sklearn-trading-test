@@ -4,21 +4,98 @@ import os
 import time
 from datetime import datetime
 
+import yfinance as yf
+
+def fetch_stock_data(symbol, start_date='2020-01-01', interval='1h'):
+    """
+    Fetch historical stock data using yfinance.
+    """
+    print(f"Fetching stock data for {symbol} from yfinance...")
+    try:
+        # yfinance interval mapping: 1h, 1d, etc.
+        # yfinance max period for 1h is 730 days.
+        ticker = yf.Ticker(symbol)
+        df = ticker.history(start=start_date, interval=interval)
+        
+        if df.empty:
+            print(f"No data found for {symbol}")
+            return None
+            
+        # Standardize columns
+        df.reset_index(inplace=True)
+        df = df.rename(columns={
+            'Date': 'timestamp', 
+            'Datetime': 'timestamp',
+            'Open': 'open', 
+            'High': 'high', 
+            'Low': 'low', 
+            'Close': 'close', 
+            'Volume': 'volume'
+        })
+        
+        # Ensure timestamp is datetime
+        if 'timestamp' in df.columns:
+            df['timestamp'] = pd.to_datetime(df['timestamp'])
+            # Remove timezone if present to match crypto data usually
+            if df['timestamp'].dt.tz is not None:
+                df['timestamp'] = df['timestamp'].dt.tz_localize(None)
+            df.set_index('timestamp', inplace=True)
+            
+        # Keep only required columns
+        df = df[['open', 'high', 'low', 'close', 'volume']]
+        
+        print(f"Fetched {len(df)} rows for {symbol}")
+        return df
+    except Exception as e:
+        print(f"Error fetching stock data: {e}")
+        return None
+
 def fetch_data(symbol='BTC/USDT', timeframe='1h', start_date='2020-01-01', interval=None):
     """
-    Fetch historical OHLCV data from Binance using CCXT with pagination.
+    Fetch historical data. Dispatches to crypto or stock based on symbol format.
     """
     if interval:
         timeframe = interval
         
+    # Check if it's a crypto pair (contains '/')
+    if '/' in symbol:
+        return fetch_crypto_data(symbol, timeframe, start_date)
+    else:
+        # Try to normalize crypto symbol (e.g. XPLUSDT -> XPL/USDT)
+        normalized_symbol = normalize_symbol(symbol)
+        if normalized_symbol:
+            print(f"Normalized {symbol} to {normalized_symbol}")
+            return fetch_crypto_data(normalized_symbol, timeframe, start_date)
+            
+        return fetch_stock_data(symbol, start_date, timeframe)
+
+def normalize_symbol(symbol):
+    """
+    Attempt to normalize a symbol string to a crypto pair format (BASE/QUOTE).
+    """
+    common_quotes = ['USDT', 'USDC', 'BUSD', 'DAI', 'BTC', 'ETH', 'BNB']
+    
+    for quote in common_quotes:
+        if symbol.endswith(quote) and len(symbol) > len(quote):
+            base = symbol[:-len(quote)]
+            return f"{base}/{quote}"
+            
+    return None
+
+def fetch_crypto_data(symbol='BTC/USDT', timeframe='1h', start_date='2020-01-01'):
+    """
+    Fetch historical OHLCV data from Binance using CCXT with pagination.
+    """
     print(f"Fetching {symbol} data from Binance ({timeframe}) starting from {start_date}...")
     exchange = ccxt.binance()
     
+    # ... (rest of original fetch_data logic) ...
     # Convert start_date to timestamp (ms)
     since = exchange.parse8601(f"{start_date}T00:00:00Z")
     
     all_ohlcv = []
     limit = 1000
+    retries = 0
     
     while True:
         try:
@@ -29,11 +106,6 @@ def fetch_data(symbol='BTC/USDT', timeframe='1h', start_date='2020-01-01', inter
                 
             all_ohlcv.extend(ohlcv)
             
-            # Update 'since' to the last timestamp + 1 timeframe duration
-            # Actually, fetch_ohlcv returns candles starting >= since.
-            # So next since should be the last timestamp + 1ms (to avoid duplicate if not careful, 
-            # but usually just taking the last timestamp is safer if we handle duplicates later)
-            # Better: use the timestamp of the last candle + 1ms
             last_timestamp = ohlcv[-1][0]
             since = last_timestamp + 1
             
@@ -47,10 +119,15 @@ def fetch_data(symbol='BTC/USDT', timeframe='1h', start_date='2020-01-01', inter
                 
             # Respect rate limits
             time.sleep(exchange.rateLimit / 1000)
+            retries = 0 # Reset retries on success
             
         except Exception as e:
             print(f"Error fetching data: {e}")
-            break
+            retries += 1
+            if retries > 3:
+                print("Too many retries, stopping fetch.")
+                break
+            time.sleep(1) # Wait before retry
             
     if not all_ohlcv:
         print("No data fetched.")

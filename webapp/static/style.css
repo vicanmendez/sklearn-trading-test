@@ -1,0 +1,107 @@
+body.dark-m:root {
+    /* Dark Mode (Default) - "Gold & Bees" */
+    --bg-color: #121212;
+    --card-bg: #1e1e1e;
+    --text-color: #e0e0e0;
+    --text-muted: #a0a0a0;
+    --accent-color: #FFD700;
+    /* Gold */
+    --accent-hover: #E5C100;
+    --border-color: #333;
+    --success-color: #4caf50;
+    --danger-color: #f44336;
+    --info-color: #2196f3;
+    --glass-bg: rgba(30, 30, 30, 0.7);
+    --glass-border: rgba(255, 215, 0, 0.1);
+    --shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+}
+
+[data-theme="light"] {
+    /* Light Mode - "Banking" */
+    --bg-color: #F5F7FA;
+    --card-bg: #FFFFFF;
+    --text-color: #333333;
+    --text-muted: #666666;
+    --accent-color: #B8860B;
+    /* Dark Goldenrod */
+    --accent-hover: #A07409;
+    --border-color: #E0E0E0;
+    --success-color: #2e7d32;
+    --danger-color: #d32f2f;
+    --info-color: #0288d1;
+    --glass-bg: rgba(255, 255, 255, 0.8);
+    --glass-border: rgba(184, 134, 11, 0.2);
+    --shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+body {
+    background-color: var(--bg-color);
+    color: var(--text-color);
+    font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    transition: background-color 0.3s, color 0.3s;
+}
+
+.navbar {
+    background-color: var(--card-bg) !important;
+    border-bottom: 1px solid var(--border-color);
+    box-shadow: var(--shadow);
+}
+
+.navbar-brand,
+.nav-link {
+    color: var(--text-color) !important;
+}
+
+.navbar-brand span {
+    color: var(--accent-color);
+    font-weight: bold;
+}
+
+.card {
+    background-color: var(--card-bg);
+    border: 1px solid var(--border-color);
+    color: var(--text-color);
+    box-shadow: var(--shadow);
+}
+
+.glass-card {
+    background: var(--glass-bg);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid var(--glass-border);
+}
+
+.btn-primary {
+    background-color: var(--accent-color);
+    border-color: var(--accent-color);
+    color: #000;
+    /* Contrast on gold */
+    font-weight: 600;
+}
+
+.btn-primary:hover {
+    background-color: var(--accent-hover);
+    border-color: var(--accent-hover);
+    color: #000;
+}
+
+.form-control {
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid var(--border-color);
+    color: var(--text-color);
+}
+
+.form-control:focus {
+    background: rgba(255, 255, 255, 0.15);
+    color: var(--text-color);
+    box-shadow: 0 0 0 0.25rem rgba(255, 215, 0, 0.25);
+    border-color: var(--accent-color);
+}
+
+.hero-section {
+    padding: 3rem 0;
+}
+
+.badge {
+    padding: 0.5em 0.8em;
+}

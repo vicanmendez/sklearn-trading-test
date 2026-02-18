@@ -1,0 +1,727 @@
+{% extends "base.html" %}
+
+{% block container_class %}container-fluid px-0{% endblock %}
+
+{% block content %}
+<div class="row g-0" style="min-height: calc(100vh - 56px);">
+    <!-- Sidebar -->
+    <div class="col-md-2 bg-dark border-end border-secondary sidebar">
+        <div class="d-flex flex-column p-3 text-white h-100">
+            <span class="fs-5 fw-bold mb-3 text-warning">Command Center</span>
+            <ul class="nav nav-pills flex-column mb-auto" id="mainTab" role="tablist">
+                <li class="nav-item">
+                    <button class="nav-link active w-100 text-start" id="control-tab" data-bs-toggle="pill"
+                        data-bs-target="#control" type="button" role="tab"><i class="fas fa-robot me-2"></i> Control
+                        Panel</button>
+                </li>
+                <li class="nav-item">
+                    <button class="nav-link w-100 text-start" id="data-tab" data-bs-toggle="pill" data-bs-target="#data"
+                        type="button" role="tab"><i class="fas fa-database me-2"></i> Data Manager</button>
+                </li>
+                <li class="nav-item">
+                    <button class="nav-link w-100 text-start" id="backtest-tab" data-bs-toggle="pill"
+                        data-bs-target="#backtest" type="button" role="tab"><i class="fas fa-chart-line me-2"></i>
+                        Backtest Lab</button>
+                </li>
+                <li class="nav-item">
+                    <button class="nav-link w-100 text-start" id="terminal-tab" data-bs-toggle="pill"
+                        data-bs-target="#terminal" type="button" role="tab"><i class="fas fa-terminal me-2"></i>
+                        Terminal / Logs</button>
+                </li>
+                <li class="nav-item mt-3">
+                    <button class="nav-link w-100 text-start text-warning" data-bs-toggle="modal"
+                        data-bs-target="#settingsModal" type="button"><i class="fas fa-cog me-2"></i> Settings</button>
+                </li>
+            </ul>
+            <hr>
+            <div class="dropdown">
+                <a href="#" class="d-flex align-items-center text-white text-decoration-none dropdown-toggle"
+                    id="dropdownUser1" data-bs-toggle="dropdown" aria-expanded="false">
+                    <i class="fas fa-user-circle me-2"></i>
+                    <strong>{{ current_user.username }}</strong>
+                </a>
+                <ul class="dropdown-menu dropdown-menu-dark text-small shadow" aria-labelledby="dropdownUser1">
+                    <li><a class="dropdown-item" href="#" data-bs-toggle="modal"
+                            data-bs-target="#profileModal">Profile</a></li>
+                    <li>
+                        <hr class="dropdown-divider">
+                    </li>
+                    <li><a class="dropdown-item" href="{{ url_for('logout') }}">Sign out</a></li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="col-md-10 bg-black text-light p-4" style="overflow-y: auto; height: calc(100vh - 56px);">
+        <div class="tab-content" id="mainTabContent">
+
+            <!-- Tab 1: Control Panel -->
+            <div class="tab-pane fade show active" id="control" role="tabpanel">
+                <div class="d-flex justify-content-between align-items-center mb-4">
+                    <h2><i class="fas fa-tasks text-warning"></i> Active Bots</h2>
+                    <button class="btn btn-warning" data-bs-toggle="modal" data-bs-target="#createBotModal">
+                        <i class="fas fa-plus"></i> Create New Bot
+                    </button>
+                </div>
+
+                <div class="table-responsive">
+                    <table class="table table-dark table-hover align-middle">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Name</th>
+                                <th>Pair</th>
+                                <th>Status</th>
+                                <th>PnL</th>
+                                <th>Runtime</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for bot in bots %}
+                            <tr>
+                                <td>#{{ bot.id }}</td>
+                                <td class="fw-bold">{{ bot.name }}</td>
+                                <td>
+                                    {% set config = bot.config | from_json %}
+                                    <span class="badge bg-dark border border-secondary">{{ config.pair or 'BTC/USDT'
+                                        }}</span>
+                                </td>
+                                <td>
+                                    <span id="status-{{ bot.id }}"
+                                        class="badge bg-{{ 'success' if bot.status == 'running' else 'warning' if bot.status == 'training' else 'secondary' }}">
+                                        {{ bot.status }}
+                                    </span>
+                                </td>
+                                <td id="pnl-{{ bot.id }}"
+                                    class="{{ 'text-success' if bot.pnl >= 0 else 'text-danger' }} fw-bold">{{
+                                    "%.2f"|format(bot.pnl) }}%</td>
+                                <td id="runtime-{{ bot.id }}" class="font-monospace small">{{ bot.runtime }}</td>
+                                <td>
+                                    <div class="btn-group btn-group-sm">
+                                        {% if bot.status == 'running' %}
+                                        <button class="btn btn-outline-danger"
+                                            onclick="controlBot({{ bot.id }}, 'stop')" title="Stop Bot"><i
+                                                class="fas fa-stop"></i></button>
+                                        <button class="btn btn-outline-warning" onclick="showTrades({{ bot.id }})"
+                                            title="View Trades"><i class="fas fa-list-ul"></i></button>
+                                        {% else %}
+                                        <button class="btn btn-outline-success"
+                                            onclick="controlBot({{ bot.id }}, 'start')" title="Start Bot"><i
+                                                class="fas fa-play"></i></button>
+                                        <button class="btn btn-outline-info" data-bs-toggle="modal"
+                                            data-bs-target="#trainModal{{ bot.id }}" title="Train Model"><i
+                                                class="fas fa-dumbbell"></i></button>
+                                        <button class="btn btn-outline-light" data-bs-toggle="modal"
+                                            data-bs-target="#uploadModal{{ bot.id }}" title="Upload Model"><i
+                                                class="fas fa-upload"></i></button>
+                                        <button class="btn btn-outline-warning" onclick="showTrades({{ bot.id }})"
+                                            title="View Trades"><i class="fas fa-list-ul"></i></button>
+                                        <button class="btn btn-outline-danger" onclick="deleteBot({{ bot.id }})"
+                                            title="Delete Bot"><i class="fas fa-trash"></i></button>
+                                        {% endif %}
+                                    </div>
+
+                                    <!-- Train Modal -->
+                                    <div class="modal fade" id="trainModal{{ bot.id }}" tabindex="-1">
+                                        <div class="modal-dialog">
+                                            <div class="modal-content bg-dark text-light border-secondary">
+                                                <div class="modal-header border-secondary">
+                                                    <h5 class="modal-title">Train {{ bot.name }}</h5>
+                                                    <button type="button" class="btn-close btn-close-white"
+                                                        data-bs-dismiss="modal"></button>
+                                                </div>
+                                                <div class="modal-body">
+                                                    <form id="trainForm{{ bot.id }}"
+                                                        onsubmit="event.preventDefault(); trainBot({{ bot.id }});">
+                                                        <div class="mb-3">
+                                                            <label>Start Date</label>
+                                                            <input type="date"
+                                                                class="form-control bg-black text-light border-secondary"
+                                                                id="trainStart{{ bot.id }}" value="2020-01-01">
+                                                        </div>
+                                                        <div class="mb-3">
+                                                            <label>End Date (Optional)</label>
+                                                            <input type="date"
+                                                                class="form-control bg-black text-light border-secondary"
+                                                                id="trainEnd{{ bot.id }}">
+                                                        </div>
+                                                        <button type="submit" class="btn btn-warning w-100">Start
+                                                            Training</button>
+                                                    </form>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Upload Modal -->
+                                    <div class="modal fade" id="uploadModal{{ bot.id }}" tabindex="-1">
+                                        <div class="modal-dialog">
+                                            <div class="modal-content bg-dark text-light border-secondary">
+                                                <div class="modal-header border-secondary">
+                                                    <h5 class="modal-title">Upload Model for {{ bot.name }}</h5>
+                                                    <button type="button" class="btn-close btn-close-white"
+                                                        data-bs-dismiss="modal"></button>
+                                                </div>
+                                                <div class="modal-body">
+                                                    <form id="uploadForm{{ bot.id }}"
+                                                        onsubmit="event.preventDefault(); uploadModel({{ bot.id }});">
+                                                        <div class="mb-3">
+                                                            <label>Select .pkl File</label>
+                                                            <input type="file"
+                                                                class="form-control bg-black text-light border-secondary"
+                                                                id="fileInput{{ bot.id }}" accept=".pkl" required>
+                                                        </div>
+                                                        <button type="submit" class="btn btn-info w-100">Upload</button>
+                                                    </form>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% else %}
+                            <tr>
+                                <td colspan="7" class="text-center text-muted">No bots created yet.</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Global Component: Trades Modal -->
+            <div class="modal fade" id="tradesModal" tabindex="-1">
+                <div class="modal-dialog modal-lg">
+                    <div class="modal-content bg-dark text-light border-secondary">
+                        <div class="modal-header border-secondary">
+                            <h5 class="modal-title">Trade History</h5>
+                            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                        </div>
+                        <div class="modal-body">
+                            <div class="table-responsive">
+                                <table class="table table-dark table-sm table-hover" id="tradesTable">
+                                    <thead>
+                                        <tr>
+                                            <th>Time</th>
+                                            <th>Action</th>
+                                            <th>Price</th>
+                                            <th>Qty</th>
+                                            <th>PnL</th>
+                                            <th>Info</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tab 2: Data Manager -->
+            <div class="tab-pane fade" id="data" role="tabpanel">
+                <h2 class="mb-4"><i class="fas fa-database text-warning"></i> Data Manager</h2>
+                <div class="card bg-dark border-secondary mb-4" style="max-width: 600px;">
+                    <div class="card-body">
+                        <h5 class="card-title">Fetch / Update Market Data</h5>
+                        <p class="text-muted small">This will download OHLCV data from Binance/Yahoo and save it locally
+                            for training/backtesting.</p>
+                        <form id="dataFetchForm" onsubmit="event.preventDefault(); fetchData();">
+                            <div class="mb-3">
+                                <label class="form-label">Symbol (e.g. BTC/USDT)</label>
+                                <input type="text" class="form-control bg-black text-light border-secondary"
+                                    id="fetchSymbol" placeholder="BTC/USDT" required>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Start Date</label>
+                                <input type="date" class="form-control bg-black text-light border-secondary"
+                                    id="fetchStartDate" value="2020-01-01">
+                            </div>
+                            <button type="submit" class="btn btn-primary" id="fetchBtn"><i class="fas fa-download"></i>
+                                Fetch Data</button>
+                        </form>
+                        <div id="fetchResult" class="mt-3"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tab 3: Backtest Lab -->
+            <div class="tab-pane fade" id="backtest" role="tabpanel">
+                <h2 class="mb-4"><i class="fas fa-vial text-warning"></i> Backtest Lab</h2>
+                <div class="row">
+                    <div class="col-md-4">
+                        <div class="card bg-dark border-secondary">
+                            <div class="card-body">
+                                <h5 class="card-title">Configuration</h5>
+                                <form id="backtestForm" onsubmit="event.preventDefault(); runBacktest();">
+                                    <div class="mb-3">
+                                        <label class="form-label">Select Bot (Model/Config)</label>
+                                        <select class="form-select bg-black text-light border-secondary"
+                                            id="backtestBotId">
+                                            {% for bot in bots %}
+                                            <option value="{{ bot.id }}">{{ bot.name }} ({{ bot.id }})</option>
+                                            {% endfor %}
+                                        </select>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label>Start Date</label>
+                                        <input type="date" class="form-control bg-black text-light border-secondary"
+                                            id="backtestStart" value="2022-01-01">
+                                    </div>
+                                    <div class="mb-3">
+                                        <label>End Date</label>
+                                        <input type="date" class="form-control bg-black text-light border-secondary"
+                                            id="backtestEnd">
+                                    </div>
+                                    <button type="submit" class="btn btn-warning w-100" id="backtestBtn"><i
+                                            class="fas fa-play"></i> Run Backtest</button>
+                                </form>
+                            </div>
+                        </div>
+                        <div class="card bg-dark border-secondary mt-3">
+                            <div class="card-body">
+                                <h5 class="card-title">Results</h5>
+                                <div id="backtestMetrics">Run a backtest to see results.</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-8">
+                        <div class="card bg-dark border-secondary h-100">
+                            <div class="card-body">
+                                <h5 class="card-title">Equity Curve</h5>
+                                <canvas id="backtestChart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tab 4: Terminal -->
+            <div class="tab-pane fade" id="terminal" role="tabpanel">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h2><i class="fas fa-terminal text-warning"></i> System Logs</h2>
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" id="autoScroll" checked>
+                        <label class="form-check-label" for="autoScroll">Auto-scroll</label>
+                    </div>
+                </div>
+                <div class="bg-black border border-secondary p-3 font-monospace small" id="logContainer"
+                    style="height: 70vh; overflow-y: scroll; color: #0f0;">
+                    <div>Waiting for logs...</div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+</div>
+
+<!-- Modal: Create Bot -->
+<div class="modal fade" id="createBotModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content bg-dark text-light border-secondary">
+            <div class="modal-header border-secondary">
+                <h5 class="modal-title">Create New Bot</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form action="{{ url_for('create_bot') }}" method="POST">
+                    <div class="mb-3">
+                        <label class="form-label">Bot Name</label>
+                        <input type="text" class="form-control bg-black text-light border-secondary" name="name"
+                            required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Asset Class</label>
+                        <select class="form-select bg-black text-light border-secondary" name="asset_class">
+                            <option value="crypto">Crypto</option>
+                            <option value="stock">Stock</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Symbol (Pair)</label>
+                        <input type="text" class="form-control bg-black text-light border-secondary" name="symbol"
+                            value="BTC/USDT" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Strategy</label>
+                        <select class="form-select bg-black text-light border-secondary" name="strategy">
+                            <option value="HighVol">High Volatility (Breakout)</option>
+                            <option value="MACD">MACD Trend Follow</option>
+                            <option value="RSI">RSI Mean Reversion</option>
+                        </select>
+                    </div>
+                    <button type="submit" class="btn btn-warning w-100">Create Bot</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal: Settings -->
+<div class="modal fade" id="settingsModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content bg-dark text-light border-secondary">
+            <div class="modal-header border-secondary">
+                <h5 class="modal-title"><i class="fas fa-key text-warning"></i> API Keys & Settings</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-muted small">Update your API keys here. These are stored in <code>config.py</code>.
+                    Secrets are masked.</p>
+                <form id="settingsForm" onsubmit="event.preventDefault(); saveSettings();">
+                    <div class="mb-3">
+                        <label class="form-label">Binance API Key</label>
+                        <input type="text" class="form-control bg-black text-light border-secondary" id="binanceKey">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Binance API Secret</label>
+                        <input type="password" class="form-control bg-black text-light border-secondary"
+                            id="binanceSecret">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Brevo (Email) API Key</label>
+                        <input type="password" class="form-control bg-black text-light border-secondary" id="brevoKey">
+                    </div>
+                    <button type="submit" class="btn btn-warning w-100">Save Changes</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // ... existing ...
+
+    // --- Settings ---
+    const settingsModal = document.getElementById('settingsModal');
+    settingsModal.addEventListener('show.bs.modal', loadSettings);
+
+    function loadSettings() {
+        fetch('/api/config')
+            .then(res => res.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    const c = data.config;
+                    document.getElementById('binanceKey').value = c.BINANCE_API_KEY || '';
+                    document.getElementById('binanceSecret').value = c.BINANCE_API_SECRET || '';
+                    document.getElementById('brevoKey').value = c.BREVO_API_KEY || '';
+                }
+            });
+    }
+
+    function saveSettings() {
+        const data = {
+            BINANCE_API_KEY: document.getElementById('binanceKey').value,
+            BINANCE_API_SECRET: document.getElementById('binanceSecret').value,
+            BREVO_API_KEY: document.getElementById('brevoKey').value
+        };
+
+        fetch('/api/config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        })
+            .then(res => res.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    alert('Settings updated successfully!');
+                    bootstrap.Modal.getInstance(settingsModal).hide();
+                } else {
+                    alert('Error: ' + data.message);
+                }
+            });
+    }
+
+    // --- Trades ---
+    function showTrades(botId) {
+        // Initialize or get modal
+        const modalEl = document.getElementById('tradesModal');
+        let modal = bootstrap.Modal.getInstance(modalEl);
+        if (!modal) {
+            modal = new bootstrap.Modal(modalEl);
+        }
+
+        const tbody = document.querySelector('#tradesTable tbody');
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center">Loading...</td></tr>';
+        modal.show();
+
+        fetch(`/api/bot/${botId}/trades`)
+            .then(res => res.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    tbody.innerHTML = '';
+                    if (data.data.length === 0) {
+                        tbody.innerHTML = '<tr><td colspan="6" class="text-center">No trades found.</td></tr>';
+                        return;
+                    }
+                    data.data.forEach(t => {
+                        const action = t.Action || '';
+                        const pnl = parseFloat(t.PnL || t['Amount/PnL'] || 0);
+                        const row = `<tr>
+                            <td>${t.Timestamp || t.timestamp}</td>
+                            <td class="${action.includes('BUY') ? 'text-success' : 'text-danger'}">${action}</td>
+                            <td>${t.Price}</td>
+                            <td>${parseFloat(t.Quantity).toFixed(6)}</td>
+                            <td class="${pnl >= 0 ? 'text-success' : 'text-danger'}">${pnl.toFixed(4)}</td>
+                            <td><small>${t.Info}</small></td>
+                        </tr>`;
+                        tbody.innerHTML += row;
+                    });
+                } else {
+                    tbody.innerHTML = `<tr><td colspan="6" class="text-danger">${data.message}</td></tr>`;
+                }
+            })
+            .catch(err => {
+                tbody.innerHTML = `<tr><td colspan="6" class="text-danger">Error: ${err}</td></tr>`;
+            });
+    }
+
+
+    function controlBot(botId, action) {
+        fetch(`/api/bot/${botId}/${action}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({})
+        })
+            .then(res => res.json())
+            .then(data => {
+                alert(data.message);
+                if (data.status === 'success') location.reload();
+            })
+            .catch(err => alert('Request failed: ' + err));
+    }
+
+    function deleteBot(botId) {
+        if (!confirm('Delete this bot?')) return;
+        controlBot(botId, 'delete');
+    }
+
+    function trainBot(botId) {
+        const start = document.getElementById(`trainStart${botId}`).value;
+        const end = document.getElementById(`trainEnd${botId}`).value;
+
+        // Hide modal
+        const modalEl = document.getElementById(`trainModal${botId}`);
+        const modal = bootstrap.Modal.getInstance(modalEl);
+        modal.hide();
+
+        fetch(`/api/bot/${botId}/train`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ start_date: start, end_date: end })
+        })
+            .then(res => res.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    alert('Training started. Redirecting to System Logs...');
+                    // Switch to System Logs tab
+                    // The tab ID is v-pills-terminal-tab based on the layout
+                    const triggerEl = document.querySelector('#v-pills-terminal-tab');
+                    if (triggerEl) {
+                        bootstrap.Tab.getInstance(triggerEl).show(); // or new bootstrap.Tab(triggerEl).show()
+                    } else {
+                        // Fallback if ID is different, try searching by text
+                        const allTabs = document.querySelectorAll('[data-bs-toggle="pill"]');
+                        allTabs.forEach(t => {
+                            if (t.innerText.includes('System Logs') || t.innerText.includes('Terminal')) {
+                                new bootstrap.Tab(t).show();
+                            }
+                        });
+                    }
+                } else {
+                    alert(data.message);
+                }
+            })
+            .catch(err => alert('Error: ' + err));
+    }
+
+    function uploadModel(botId) {
+        const fileInput = document.getElementById(`fileInput${botId}`);
+        const file = fileInput.files[0];
+        if (!file) return;
+
+        const formData = new FormData();
+        formData.append('file', file);
+
+        fetch(`/api/bot/${botId}/upload_model`, {
+            method: 'POST',
+            body: formData
+        })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    alert(data.message);
+                    location.reload();
+                } else {
+                    alert('Upload failed: ' + data.message);
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('An error occurred during upload.');
+            });
+    }
+
+    // --- Data Manager ---
+    function fetchData() {
+        const symbol = document.getElementById('fetchSymbol').value;
+        const start = document.getElementById('fetchStartDate').value;
+        const btn = document.getElementById('fetchBtn');
+        const resDiv = document.getElementById('fetchResult');
+
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Fetching...';
+        resDiv.innerHTML = '';
+
+        fetch('/api/data/fetch', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ symbol: symbol, start_date: start })
+        })
+            .then(res => res.json())
+            .then(data => {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-download"></i> Fetch Data';
+                if (data.status === 'success') {
+                    resDiv.innerHTML = `<div class="alert alert-success">${data.message}</div>`;
+                } else {
+                    resDiv.innerHTML = `<div class="alert alert-danger">${data.message}</div>`;
+                }
+            })
+            .catch(err => {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-download"></i> Fetch Data';
+                resDiv.innerHTML = `<div class="alert alert-danger">${err}</div>`;
+            });
+    }
+
+    // --- Backtest ---
+    let backtestChart = null;
+
+    function runBacktest() {
+        const botId = document.getElementById('backtestBotId').value;
+        const start = document.getElementById('backtestStart').value;
+        const end = document.getElementById('backtestEnd').value;
+        const btn = document.getElementById('backtestBtn');
+        const metricsDiv = document.getElementById('backtestMetrics');
+
+        btn.disabled = true;
+        btn.textContent = 'Running...';
+        metricsDiv.textContent = 'Calculating...';
+
+        fetch(`/api/bot/${botId}/backtest`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ start_date: start, end_date: end })
+        })
+            .then(res => res.json())
+            .then(data => {
+                btn.disabled = false;
+                btn.textContent = 'Run Backtest';
+
+                if (data.status === 'success') {
+                    // Metrics
+                    const r = data.data;
+                    metricsDiv.innerHTML = `
+<div class="row">
+    <div class="col-6"><strong>Return:</strong> ${r.total_return}</div>
+    <div class="col-6"><strong>Max DD:</strong> ${r.max_drawdown}</div>
+    <div class="col-6"><strong>Sharpe:</strong> ${r.sharpe_ratio}</div>
+    <div class="col-6"><strong>Trades:</strong> ${r.trades}</div>
+</div>
+`;
+
+                    // Render Chart (Dummy data for now if backend doesn't return timeseries)
+                    // Assuming backend returns 'equity_curve' as a list of values?
+                    // bot_interface.run_backtest -> returns (success, metrics).
+                    // We defined metrics in bot_interface task previously. Ideally it returns the daily PnL series.
+                    // For now, let's assume it returns limited data and we might need to enhance backend to return series.
+
+                    // If data.data.equity_curve exists:
+                    if (r.equity_curve) {
+                        renderChart(r.equity_curve);
+                    } else {
+                        metricsDiv.innerHTML += '<div class="text-warning small mt-2">No equity curve data available for chart.</div>';
+                    }
+                } else {
+                    metricsDiv.innerHTML = `<div class="text-danger">${data.message}</div>`;
+                }
+            });
+    }
+
+    function renderChart(equityCurve) {
+        const ctx = document.getElementById('backtestChart').getContext('2d');
+        if (backtestChart) backtestChart.destroy();
+
+        backtestChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: equityCurve.map((_, i) => i), // Index as label if no dates
+                datasets: [{
+                    label: 'Equity Curve',
+                    data: equityCurve,
+                    borderColor: '#ffc107',
+                    tension: 0.1
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    legend: { display: false }
+                }
+            }
+        });
+    }
+
+    // --- Terminal / Logs ---
+    setInterval(() => {
+        // Only poll if tab is active
+        if (!document.getElementById('terminal').classList.contains('active')) return;
+
+        fetch('/api/logs')
+            .then(res => res.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    const container = document.getElementById('logContainer');
+                    container.innerHTML = data.logs.join('<br>');
+                    if (document.getElementById('autoScroll').checked) {
+                        container.scrollTop = container.scrollHeight;
+                    }
+                }
+            });
+    }, 2000);
+
+    // --- Real-Time Bot Stats Polling ---
+    setInterval(() => {
+        fetch('/api/stats')
+            .then(res => res.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    for (const [botId, stats] of Object.entries(data.data)) {
+                        // Update Runtime
+                        const runtimeEl = document.getElementById(`runtime-${botId}`);
+                        if (runtimeEl) runtimeEl.innerText = stats.runtime;
+
+                        // Update PnL
+                        const pnlEl = document.getElementById(`pnl-${botId}`);
+                        if (pnlEl) {
+                            pnlEl.innerText = stats.pnl.toFixed(2) + '%';
+                            pnlEl.classList.remove('text-success', 'text-danger');
+                            pnlEl.classList.add(stats.pnl >= 0 ? 'text-success' : 'text-danger');
+                        }
+
+                        // Update Status
+                        const statusEl = document.getElementById(`status-${botId}`);
+                        if (statusEl) {
+                            statusEl.innerText = stats.status;
+                            statusEl.className = `badge bg-${stats.status === 'running' ? 'success' : stats.status === 'training' ? 'warning' : 'secondary'}`;
+                        }
+                    }
+                }
+            });
+    }, 1000); // Update every second
+
+</script>
+{% endblock %}

@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="hero-section text-center mb-5">
+    <h1 class="display-4"><i class="fas fa-crown text-warning"></i> QueenBee <span class="text-warning">Bots</span></h1>
+    <p class="lead">AI-Powered Cryptocurrency Trading Automation</p>
+    <div class="alert alert-warning d-inline-block mt-3 glass-card">
+        <small><i class="fas fa-exclamation-triangle"></i> <strong>Disclaimer:</strong> Trading cryptocurrencies
+            involves significant risk. Proceed with caution.</small>
+    </div>
+</div>
+
+<div class="row mb-5">
+    <div class="col-md-12">
+        <div class="card glass-card">
+            <div class="card-body">
+                <h5 class="card-title text-warning"><i class="fas fa-chart-line"></i> Market Overview</h5>
+                <div id="crypto-ticker" class="d-flex justify-content-around flex-wrap">
+                    {% if market_data %}
+                    {% for coin in market_data %}
+                    <div class="ticker-item p-2">
+                        <span class="fw-bold">{{ coin.name }}</span>:
+                        <span class="text-success">${{ coin.current_price }}</span>
+                        <span
+                            class="{% if coin.price_change_percentage_24h > 0 %}text-success{% else %}text-danger{% endif %}">
+                            ({{ coin.price_change_percentage_24h }}%)
+                        </span>
+                    </div>
+                    {% endfor %}
+                    {% else %}
+                    <p class="text-muted">Loading market data...</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<h3 class="text-center mb-4 text-warning">Public Bot Performance</h3>
+
+<div class="row" id="public-bots-container">
+    {% for bot in active_bots %}
+    <div class="col-md-6 mb-4">
+        <div class="card glass-card h-100">
+            <div class="card-body">
+                <h5 class="card-title d-flex justify-content-between align-items-center">
+                    {{ bot.name }}
+                    <span id="status-{{ bot.id }}"
+                        class="badge bg-{{ 'success' if bot.status == 'running' else 'secondary' }}">{{ bot.status
+                        }}</span>
+                </h5>
+                <p class="card-text mt-3">
+                    <strong>PnL:</strong> <span id="pnl-{{ bot.id }}"
+                        class="{{ 'text-success' if bot.pnl >= 0 else 'text-danger' }} fw-bold">{{ bot.pnl
+                        }}%</span><br>
+                    <strong>Runtime:</strong> <span id="runtime-{{ bot.id }}">{{ bot.runtime }}</span><br>
+                    <strong>Updated:</strong> <small class="text-muted">{{ bot.last_updated.strftime('%H:%M:%S')
+                        }}</small>
+                </p>
+                <div class="chart-placeholder mt-3"
+                    style="height: 100px; background: rgba(255,255,255,0.05); border-radius: 5px; display: flex; align-items: center; justify-content: center;">
+                    <!-- Sparkline or simple chart here later -->
+                    <span class="text-muted small">Performance Chart Area</span>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% else %}
+    <div class="col-12 text-center text-muted">
+        No active bots to display.
+    </div>
+    {% endfor %}
+</div>
+
+<script>
+    setInterval(() => {
+        fetch('/api/stats')
+            .then(res => res.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    for (const [botId, stats] of Object.entries(data.data)) {
+                        // Update Runtime
+                        const runtimeEl = document.getElementById(`runtime-${botId}`);
+                        if (runtimeEl) runtimeEl.innerText = stats.runtime;
+
+                        // Update PnL
+                        const pnlEl = document.getElementById(`pnl-${botId}`);
+                        if (pnlEl) {
+                            pnlEl.innerText = stats.pnl.toFixed(2) + '%';
+                            pnlEl.classList.remove('text-success', 'text-danger');
+                            pnlEl.classList.add(stats.pnl >= 0 ? 'text-success' : 'text-danger');
+                        }
+
+                        // Update Status
+                        const statusEl = document.getElementById(`status-${botId}`);
+                        if (statusEl) {
+                            statusEl.innerText = stats.status;
+                            statusEl.className = `badge bg-${stats.status === 'running' ? 'success' : stats.status === 'training' ? 'warning' : 'secondary'}`;
+                        }
+                    }
+                }
+            });
+    }, 1000);
+</script>
+{% endblock %}
