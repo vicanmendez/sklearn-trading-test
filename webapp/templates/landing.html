@@ -14,22 +14,142 @@
     <div class="col-md-12">
         <div class="card glass-card">
             <div class="card-body">
-                <h5 class="card-title text-warning"><i class="fas fa-chart-line"></i> Market Overview</h5>
-                <div id="crypto-ticker" class="d-flex justify-content-around flex-wrap">
-                    {% if market_data %}
-                    {% for coin in market_data %}
-                    <div class="ticker-item p-2">
-                        <span class="fw-bold">{{ coin.name }}</span>:
-                        <span class="text-success">${{ coin.current_price }}</span>
-                        <span
-                            class="{% if coin.price_change_percentage_24h > 0 %}text-success{% else %}text-danger{% endif %}">
-                            ({{ coin.price_change_percentage_24h }}%)
-                        </span>
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h5 class="card-title text-warning mb-0">
+                        <i class="fas fa-chart-line me-2"></i>Market Overview
+                    </h5>
+                    <div class="d-flex align-items-center gap-3">
+                        <span id="marketLastUpdate" class="text-muted small"></span>
+                        <span id="marketCountdown" class="badge bg-secondary font-monospace">—</span>
+                        <button class="btn btn-sm btn-outline-warning" onclick="fetchMarket(true)" title="Refresh now">
+                            <i class="fas fa-sync-alt" id="refreshIcon"></i>
+                        </button>
                     </div>
-                    {% endfor %}
-                    {% else %}
-                    <p class="text-muted">Loading market data...</p>
-                    {% endif %}
+                </div>
+
+                <!-- Tabs -->
+                <ul class="nav nav-tabs border-secondary mb-3" id="marketTabs">
+                    <li class="nav-item">
+                        <button class="nav-link active text-warning" id="tab-crypto" onclick="showTab('crypto')">
+                            <i class="fab fa-bitcoin me-1"></i>Crypto
+                        </button>
+                    </li>
+                    <li class="nav-item">
+                        <button class="nav-link text-light" id="tab-stocks" onclick="showTab('stocks')">
+                            <i class="fas fa-building me-1"></i>Stocks
+                        </button>
+                    </li>
+                    <li class="nav-item">
+                        <button class="nav-link text-light" id="tab-etfs" onclick="showTab('etfs')">
+                            <i class="fas fa-layer-group me-1"></i>ETFs
+                        </button>
+                    </li>
+                </ul>
+
+                <!-- Tab Panels -->
+                <div id="panel-crypto" class="market-panel">
+                    <div class="row g-2" id="grid-crypto">
+                        <div class="col-12 text-center text-muted py-3"><i
+                                class="fas fa-spinner fa-spin me-2"></i>Loading...</div>
+                    </div>
+                </div>
+                <div id="panel-stocks" class="market-panel d-none">
+                    <div class="row g-2" id="grid-stocks">
+                        <div class="col-12 text-center text-muted py-3"><i
+                                class="fas fa-spinner fa-spin me-2"></i>Loading...</div>
+                    </div>
+                </div>
+                <div id="panel-etfs" class="market-panel d-none">
+                    <div class="row g-2" id="grid-etfs">
+                        <div class="col-12 text-center text-muted py-3"><i
+                                class="fas fa-spinner fa-spin me-2"></i>Loading...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+<!-- =============================================
+     Market Insights: Fear & Greed + AI Analysis
+     ============================================= -->
+<div class="row mb-5" id="insightsSection">
+    <!-- Fear & Greed Gauges -->
+    <div class="col-lg-5 mb-4 mb-lg-0">
+        <div class="card glass-card h-100">
+            <div class="card-body">
+                <h5 class="card-title text-warning mb-3">
+                    <i class="fas fa-thermometer-half me-2"></i>Fear &amp; Greed Index
+                </h5>
+                <div class="row g-3">
+                    <!-- Crypto Gauge -->
+                    <div class="col-6 text-center">
+                        <div class="small text-muted mb-1"><i class="fab fa-bitcoin me-1"></i>Crypto</div>
+                        <div class="gauge-wrap" id="gauge-crypto">
+                            <svg viewBox="0 0 120 70" width="100%" style="max-width:160px">
+                                <path d="M10,65 A50,50 0 0,1 110,65" fill="none" stroke="var(--border-color)"
+                                    stroke-width="12" stroke-linecap="round" />
+                                <path id="arc-crypto" d="M10,65 A50,50 0 0,1 110,65" fill="none" stroke="#ffc107"
+                                    stroke-width="12" stroke-linecap="round" stroke-dasharray="157"
+                                    stroke-dashoffset="157" style="transition:stroke-dashoffset 1s ease,stroke 0.5s" />
+                                <text x="60" y="62" text-anchor="middle" font-size="18" font-weight="bold"
+                                    fill="var(--text-color)" id="val-crypto">—</text>
+                            </svg>
+                        </div>
+                        <div id="label-crypto" class="fw-bold small mt-1">Loading...</div>
+                    </div>
+                    <!-- Stocks Gauge -->
+                    <div class="col-6 text-center">
+                        <div class="small text-muted mb-1"><i class="fas fa-building me-1"></i>Stocks <span
+                                id="vix-label" class="text-muted" style="font-size:0.65rem"></span></div>
+                        <div class="gauge-wrap" id="gauge-stocks">
+                            <svg viewBox="0 0 120 70" width="100%" style="max-width:160px">
+                                <path d="M10,65 A50,50 0 0,1 110,65" fill="none" stroke="var(--border-color)"
+                                    stroke-width="12" stroke-linecap="round" />
+                                <path id="arc-stocks" d="M10,65 A50,50 0 0,1 110,65" fill="none" stroke="#ffc107"
+                                    stroke-width="12" stroke-linecap="round" stroke-dasharray="157"
+                                    stroke-dashoffset="157" style="transition:stroke-dashoffset 1s ease,stroke 0.5s" />
+                                <text x="60" y="62" text-anchor="middle" font-size="18" font-weight="bold"
+                                    fill="var(--text-color)" id="val-stocks">—</text>
+                            </svg>
+                        </div>
+                        <div id="label-stocks" class="fw-bold small mt-1">Loading...</div>
+                    </div>
+                </div>
+                <!-- Legend -->
+                <div class="d-flex justify-content-between mt-3 px-2" style="font-size:0.65rem">
+                    <span class="text-danger">Extreme Fear</span>
+                    <span class="text-warning">Neutral</span>
+                    <span class="text-success">Extreme Greed</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- AI Analysis -->
+    <div class="col-lg-7">
+        <div class="card glass-card h-100">
+            <div class="card-body d-flex flex-column">
+                <div class="d-flex justify-content-between align-items-start mb-2">
+                    <h5 class="card-title text-warning mb-0">
+                        <i class="fas fa-robot me-2"></i>AI Market Panorama
+                        <span class="badge bg-secondary ms-2" style="font-size:0.6rem">Powered by Gemini</span>
+                    </h5>
+                    <small id="aiGeneratedAt" class="text-muted"></small>
+                </div>
+                <div class="alert alert-warning py-1 px-2 mb-2" style="font-size:0.72rem">
+                    <i class="fas fa-exclamation-triangle me-1"></i>
+                    <strong>Not financial advice.</strong> This is an AI-generated summary for informational purposes
+                    only.
+                </div>
+                <div id="aiAnalysisText" class="flex-grow-1" style="font-size:0.92rem; line-height:1.6">
+                    <div class="text-muted fst-italic">
+                        <i class="fas fa-spinner fa-spin me-2"></i>Generating market analysis...
+                    </div>
+                </div>
+                <div class="mt-2 text-end">
+                    <small class="text-muted">Refreshes every hour &bull; Source: Gemini 3.0 Flash-Preview</small>
                 </div>
             </div>
         </div>
@@ -38,10 +158,11 @@
 
 <h3 class="text-center mb-4 text-warning">Public Bot Performance</h3>
 
+
 <div class="row" id="public-bots-container">
     {% for bot in active_bots %}
     <div class="col-md-6 mb-4">
-        <div class="card glass-card h-100">
+        <div class="card glass-card h-100" style="cursor:pointer" onclick="showBotDetail({{ bot.id }})">
             <div class="card-body">
                 <h5 class="card-title d-flex justify-content-between align-items-center">
                     {{ bot.name }}
@@ -53,14 +174,16 @@
                     <strong>PnL:</strong> <span id="pnl-{{ bot.id }}"
                         class="{{ 'text-success' if bot.pnl >= 0 else 'text-danger' }} fw-bold">{{ bot.pnl
                         }}%</span><br>
-                    <strong>Runtime:</strong> <span id="runtime-{{ bot.id }}">{{ bot.runtime }}</span><br>
+                    <strong>Runtime:</strong> <span id="runtime-{{ bot.id }}" class="font-monospace">{{ bot.runtime
+                        }}</span><br>
                     <strong>Updated:</strong> <small class="text-muted">{{ bot.last_updated.strftime('%H:%M:%S')
                         }}</small>
                 </p>
-                <div class="chart-placeholder mt-3"
-                    style="height: 100px; background: rgba(255,255,255,0.05); border-radius: 5px; display: flex; align-items: center; justify-content: center;">
-                    <!-- Sparkline or simple chart here later -->
-                    <span class="text-muted small">Performance Chart Area</span>
+                <div class="mt-3">
+                    <canvas id="sparkline-{{ bot.id }}" height="60"></canvas>
+                </div>
+                <div class="text-center mt-2">
+                    <small class="text-warning"><i class="fas fa-mouse-pointer me-1"></i>Click for details</small>
                 </div>
             </div>
         </div>
@@ -72,26 +195,218 @@
     {% endfor %}
 </div>
 
+<!-- Bot Detail Modal -->
+<div class="modal fade" id="botDetailModal" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content bg-dark text-light border-secondary">
+            <div class="modal-header border-secondary">
+                <h5 class="modal-title"><i class="fas fa-robot text-warning me-2"></i><span id="detailBotName">Bot
+                        Details</span></h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row mb-3">
+                    <div class="col-md-3">
+                        <div class="card bg-black border-secondary text-center p-3">
+                            <div class="text-muted small">Symbol</div>
+                            <div class="fw-bold fs-5" id="detailSymbol">—</div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card bg-black border-secondary text-center p-3">
+                            <div class="text-muted small">Status</div>
+                            <div class="fw-bold fs-5" id="detailStatus">—</div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card bg-black border-secondary text-center p-3">
+                            <div class="text-muted small">PnL</div>
+                            <div class="fw-bold fs-5" id="detailPnl">—</div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card bg-black border-secondary text-center p-3">
+                            <div class="text-muted small">Runtime</div>
+                            <div class="fw-bold fs-5 font-monospace" id="detailRuntime">—</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-md-5">
+                        <h6 class="text-warning"><i class="fas fa-list-ul me-1"></i> Trade History</h6>
+                        <div style="max-height: 300px; overflow-y: auto;">
+                            <table class="table table-dark table-sm table-hover" id="detailTradesTable">
+                                <thead>
+                                    <tr>
+                                        <th>Time</th>
+                                        <th>Action</th>
+                                        <th>Price</th>
+                                        <th>PnL</th>
+                                    </tr>
+                                </thead>
+                                <tbody></tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div class="col-md-7">
+                        <h6 class="text-warning"><i class="fas fa-chart-area me-1"></i> Performance</h6>
+                        <canvas id="detailChart" height="180"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script>
-    setInterval(() => {
+    // =============================================
+    // Runtime Counter (client-side, second-by-second)
+    // =============================================
+    const botStartTimes = {};
+
+    function formatRuntime(seconds) {
+        const h = Math.floor(seconds / 3600);
+        const m = Math.floor((seconds % 3600) / 60);
+        const s = Math.floor(seconds % 60);
+        return `${h}h ${m}m ${s}s`;
+    }
+
+    function updateRuntimes() {
+        const now = Date.now();
+        for (const [botId, startDate] of Object.entries(botStartTimes)) {
+            const elapsed = Math.floor((now - startDate) / 1000);
+            const el = document.getElementById(`runtime-${botId}`);
+            if (el) el.innerText = formatRuntime(elapsed);
+        }
+    }
+    setInterval(updateRuntimes, 1000);
+
+    // =============================================
+    // Bot Detail Modal
+    // =============================================
+    let detailChart = null;
+    let detailRuntimeInterval = null;
+
+    function showBotDetail(botId) {
+        const modalEl = document.getElementById('botDetailModal');
+        let modal = bootstrap.Modal.getInstance(modalEl);
+        if (!modal) modal = new bootstrap.Modal(modalEl);
+
+        document.getElementById('detailBotName').textContent = `Bot #${botId}`;
+        document.getElementById('detailSymbol').textContent = '—';
+        document.getElementById('detailStatus').textContent = '—';
+        document.getElementById('detailPnl').textContent = '—';
+        document.getElementById('detailRuntime').textContent = '—';
+        document.querySelector('#detailTradesTable tbody').innerHTML = '<tr><td colspan="4" class="text-center">Loading...</td></tr>';
+        if (detailChart) { detailChart.destroy(); detailChart = null; }
+        if (detailRuntimeInterval) { clearInterval(detailRuntimeInterval); detailRuntimeInterval = null; }
+
+        modal.show();
+
+        fetch('/api/stats')
+            .then(r => r.json())
+            .then(data => {
+                const stats = data.data && data.data[botId];
+                if (stats) {
+                    document.getElementById('detailSymbol').textContent = stats.symbol || '—';
+                    const statusEl = document.getElementById('detailStatus');
+                    statusEl.textContent = stats.status;
+                    statusEl.className = `fw-bold fs-5 text-${stats.status === 'running' ? 'success' : 'secondary'}`;
+                    const pnlEl = document.getElementById('detailPnl');
+                    pnlEl.textContent = (stats.pnl >= 0 ? '+' : '') + stats.pnl.toFixed(2) + '%';
+                    pnlEl.className = `fw-bold fs-5 ${stats.pnl >= 0 ? 'text-success' : 'text-danger'}`;
+
+                    if (stats.start_time_iso) {
+                        const startTime = new Date(stats.start_time_iso);
+                        const updateDetailRuntime = () => {
+                            const elapsed = Math.floor((Date.now() - startTime) / 1000);
+                            document.getElementById('detailRuntime').textContent = formatRuntime(elapsed);
+                        };
+                        updateDetailRuntime();
+                        detailRuntimeInterval = setInterval(updateDetailRuntime, 1000);
+                    } else {
+                        document.getElementById('detailRuntime').textContent = stats.runtime || '—';
+                    }
+                }
+            });
+
+        fetch(`/api/bot/${botId}/trades`)
+            .then(r => r.json())
+            .then(data => {
+                const tbody = document.querySelector('#detailTradesTable tbody');
+                if (data.status === 'success' && data.data.length > 0) {
+                    tbody.innerHTML = '';
+                    const equityCurve = [];
+                    const labels = [];
+                    let running = 10000;
+                    data.data.slice().reverse().forEach(t => {
+                        const action = t.Action || '';
+                        const pnl = parseFloat(t['Amount/PnL'] || 0);
+                        if (action.startsWith('CLOSE')) {
+                            running += pnl;
+                            equityCurve.push(parseFloat(running.toFixed(2)));
+                            labels.push(t.Timestamp ? t.Timestamp.substring(0, 16) : '');
+                        }
+                        const ts = t.Timestamp || '';
+                        tbody.innerHTML += `<tr>
+                            <td><small>${ts.substring(0, 16)}</small></td>
+                            <td class="${action.includes('LONG') || action.includes('BUY') ? 'text-success' : 'text-danger'} small">${action}</td>
+                            <td class="small">$${parseFloat(t.Price || 0).toFixed(4)}</td>
+                            <td class="${pnl >= 0 ? 'text-success' : 'text-danger'} small">${pnl >= 0 ? '+' : ''}${pnl.toFixed(2)}</td>
+                        </tr>`;
+                    });
+                    if (equityCurve.length > 0) {
+                        const ctx = document.getElementById('detailChart').getContext('2d');
+                        detailChart = new Chart(ctx, {
+                            type: 'line',
+                            data: {
+                                labels,
+                                datasets: [{
+                                    label: 'Portfolio Value',
+                                    data: equityCurve,
+                                    borderColor: equityCurve[equityCurve.length - 1] >= equityCurve[0] ? '#28a745' : '#dc3545',
+                                    backgroundColor: equityCurve[equityCurve.length - 1] >= equityCurve[0] ? 'rgba(40,167,69,0.1)' : 'rgba(220,53,69,0.1)',
+                                    fill: true, tension: 0.3, pointRadius: 3
+                                }]
+                            },
+                            options: {
+                                responsive: true,
+                                plugins: { legend: { display: false } },
+                                scales: {
+                                    x: { ticks: { color: '#aaa', maxTicksLimit: 8 }, grid: { color: '#333' } },
+                                    y: { ticks: { color: '#aaa' }, grid: { color: '#333' } }
+                                }
+                            }
+                        });
+                    }
+                } else {
+                    tbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted">No trades recorded yet.</td></tr>';
+                }
+            });
+
+        modalEl.addEventListener('hidden.bs.modal', () => {
+            if (detailRuntimeInterval) { clearInterval(detailRuntimeInterval); detailRuntimeInterval = null; }
+        }, { once: true });
+    }
+
+    // =============================================
+    // Stats Polling (seeds start times, updates PnL/status)
+    // =============================================
+    function pollStats() {
         fetch('/api/stats')
             .then(res => res.json())
             .then(data => {
                 if (data.status === 'success') {
                     for (const [botId, stats] of Object.entries(data.data)) {
-                        // Update Runtime
-                        const runtimeEl = document.getElementById(`runtime-${botId}`);
-                        if (runtimeEl) runtimeEl.innerText = stats.runtime;
-
-                        // Update PnL
+                        if (stats.start_time_iso && !botStartTimes[botId]) {
+                            botStartTimes[botId] = new Date(stats.start_time_iso);
+                        }
                         const pnlEl = document.getElementById(`pnl-${botId}`);
                         if (pnlEl) {
                             pnlEl.innerText = stats.pnl.toFixed(2) + '%';
                             pnlEl.classList.remove('text-success', 'text-danger');
                             pnlEl.classList.add(stats.pnl >= 0 ? 'text-success' : 'text-danger');
                         }
-
-                        // Update Status
                         const statusEl = document.getElementById(`status-${botId}`);
                         if (statusEl) {
                             statusEl.innerText = stats.status;
@@ -100,6 +415,151 @@
                     }
                 }
             });
+    }
+    pollStats();
+    setInterval(pollStats, 5000);
+
+    // =============================================
+    // Market Data (Crypto / Stocks / ETFs)
+    // =============================================
+    const MARKET_REFRESH_SECS = 30;
+    let marketCountdownVal = 0;
+    let activeTab = 'crypto';
+
+    function showTab(tab) {
+        activeTab = tab;
+        ['crypto', 'stocks', 'etfs'].forEach(t => {
+            document.getElementById(`panel-${t}`).classList.toggle('d-none', t !== tab);
+            const btn = document.getElementById(`tab-${t}`);
+            btn.classList.toggle('active', t === tab);
+            btn.classList.toggle('text-warning', t === tab);
+            btn.classList.toggle('text-light', t !== tab);
+        });
+    }
+
+    function renderGrid(containerId, items) {
+        const grid = document.getElementById(containerId);
+        if (!items || items.length === 0) {
+            grid.innerHTML = '<div class="col-12 text-center text-muted py-3">No data available.</div>';
+            return;
+        }
+        grid.innerHTML = items.map(item => {
+            const up = item.change_24h >= 0;
+            const changeClass = up ? 'text-success' : 'text-danger';
+            const changeIcon = up ? '▲' : '▼';
+            const price = item.price >= 1000
+                ? item.price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                : item.price.toFixed(item.price < 1 ? 4 : 2);
+            return `
+            <div class="col-6 col-md-4 col-lg-3 col-xl-2">
+                <div class="market-card card h-100 p-2 text-center">
+                    <div class="fw-bold text-warning small">${item.symbol}</div>
+                    <div class="text-muted" style="font-size:0.7rem">${item.name}</div>
+                    <div class="fw-bold mt-1">$${price}</div>
+                    <div class="${changeClass} small">${changeIcon} ${Math.abs(item.change_24h).toFixed(2)}%</div>
+                </div>
+            </div>`;
+        }).join('');
+    }
+
+    function fetchMarket(force = false) {
+        const icon = document.getElementById('refreshIcon');
+        icon.classList.add('fa-spin');
+        fetch('/api/market')
+            .then(r => r.json())
+            .then(data => {
+                icon.classList.remove('fa-spin');
+                if (data.status === 'success') {
+                    renderGrid('grid-crypto', data.data.crypto);
+                    renderGrid('grid-stocks', data.data.stocks);
+                    renderGrid('grid-etfs', data.data.etfs);
+                    const now = new Date();
+                    document.getElementById('marketLastUpdate').textContent =
+                        `Updated ${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`;
+                    marketCountdownVal = MARKET_REFRESH_SECS;
+                }
+            })
+            .catch(() => icon.classList.remove('fa-spin'));
+    }
+
+    // Countdown ticker
+    setInterval(() => {
+        if (marketCountdownVal > 0) {
+            marketCountdownVal--;
+            document.getElementById('marketCountdown').textContent = `↻ ${marketCountdownVal}s`;
+            if (marketCountdownVal === 0) fetchMarket();
+        }
     }, 1000);
+
+    // Initial load
+    fetchMarket();
+
+    // =============================================
+    // Market Insights: Fear & Greed + AI Analysis
+    // =============================================
+    function fgColor(score) {
+        if (score <= 25) return '#dc3545'; // red   = fear
+        if (score <= 45) return '#fd7e14'; // orange
+        if (score <= 55) return '#ffc107'; // yellow = neutral
+        if (score <= 75) return '#20c997'; // teal
+        return '#28a745';                   // green  = greed
+    }
+
+    function animateGauge(arcId, valId, labelId, score, label) {
+        const arc = document.getElementById(arcId);
+        const valEl = document.getElementById(valId);
+        const labelEl = document.getElementById(labelId);
+        if (!arc) return;
+        // Arc total length ≈ 157 (half-circle with r=50)
+        const offset = 157 - (score / 100) * 157;
+        arc.style.strokeDashoffset = offset;
+        arc.style.stroke = fgColor(score);
+        if (valEl) valEl.textContent = score;
+        if (labelEl) {
+            labelEl.textContent = label;
+            labelEl.style.color = fgColor(score);
+        }
+    }
+
+    function fetchInsights() {
+        fetch('/api/insights')
+            .then(r => r.json())
+            .then(data => {
+                if (data.status !== 'success') return;
+                const d = data.data;
+
+                // Gauges
+                const cFG = d.fear_greed.crypto;
+                const sFG = d.fear_greed.stocks;
+                animateGauge('arc-crypto', 'val-crypto', 'label-crypto', cFG.value, cFG.label);
+                animateGauge('arc-stocks', 'val-stocks', 'label-stocks', sFG.value, sFG.label);
+                if (sFG.vix) {
+                    const vixEl = document.getElementById('vix-label');
+                    if (vixEl) vixEl.textContent = `(VIX ${sFG.vix})`;
+                }
+
+                // AI Analysis
+                const ai = d.ai_analysis;
+                const textEl = document.getElementById('aiAnalysisText');
+                const tsEl = document.getElementById('aiGeneratedAt');
+                if (textEl) {
+                    if (ai.text) {
+                        textEl.innerHTML = `<p class="mb-0">${ai.text.replace(/\n/g, '<br>')}</p>`;
+                    } else if (ai.error) {
+                        textEl.innerHTML = `<div class="text-muted fst-italic small"><i class="fas fa-info-circle me-1"></i>${ai.error}</div>`;
+                    } else {
+                        textEl.innerHTML = `<div class="text-muted fst-italic small">Analysis unavailable.</div>`;
+                    }
+                }
+                if (tsEl && ai.generated_at) {
+                    tsEl.textContent = ai.generated_at;
+                }
+            })
+            .catch(err => {
+                const textEl = document.getElementById('aiAnalysisText');
+                if (textEl) textEl.innerHTML = `<div class="text-muted fst-italic small">Could not load insights.</div>`;
+            });
+    }
+    fetchInsights();
 </script>
 {% endblock %}

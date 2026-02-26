@@ -1,9 +1,13 @@
 import sys
 import os
+import datetime
+import logging
 import pandas as pd
 import threading
 import time
 import csv
+
+logger = logging.getLogger(__name__)
 
 # Add root and src to path
 root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -98,9 +102,18 @@ class BotInterface:
                 
             def run_wrapper():
                 try:
+                    logger.info(f"[Bot {bot_id}] Thread started for {symbol} ({mode})")
                     bot_instance.start()
+                    logger.info(f"[Bot {bot_id}] Thread finished normally for {symbol}")
                 except Exception as e:
-                    print(f"Bot {bot_id} thread error: {e}")
+                    import traceback
+                    logger.error(f"[Bot {bot_id}] Thread CRASHED for {symbol}: {e}")
+                    logger.error(traceback.format_exc())
+                finally:
+                    # Auto-remove from active_bots so UI reflects real state
+                    if bot_id in self.active_bots:
+                        del self.active_bots[bot_id]
+                        logger.info(f"[Bot {bot_id}] Removed from active bots registry")
 
             thread = threading.Thread(target=run_wrapper)
             thread.daemon = True
@@ -151,6 +164,7 @@ class BotInterface:
             'status': 'running',
             'symbol': meta['symbol'],
             'mode': meta['mode'],
+            'start_time_iso': datetime.datetime.utcfromtimestamp(meta['start_time']).isoformat() + 'Z',
             'runtime': self._format_runtime(time.time() - meta['start_time']),
             'pnl': 0.0,
             'trades': 0
@@ -205,28 +219,22 @@ class BotInterface:
             y_test = test_df['target']
             
             # 4. Train Model
-            # Assuming train_models returns a dict of models or a single best model
-            # For this integration, we'll assume a simplified flow or wrapper
-            # If main.py has `train_models` returning dict, we get the best one
-            
-            from models import train_models, get_best_model
+            logger.info(f"Bot {bot_id}: Training models on {len(X_train)} samples...")
             trained_models = train_models(X_train, y_train)
             best_model = get_best_model(trained_models, X_test, y_test)
-            
+
             if not best_model:
                 return None, "Model training failed"
 
-            # Save Model
-            import time
-            import os
-            from models import save_model
-            
+            # Save Model — use joblib directly with a clear absolute path
+            import joblib
             timestamp = int(time.time())
-            filename = f"models/bot_{bot_id}_{symbol.replace('/', '')}_{timestamp}.pkl"
-            full_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), filename)
-            
+            rel_path = f"models/bot_{bot_id}_{symbol.replace('/', '')}_{timestamp}.pkl"
+            full_path = os.path.join(root_dir, rel_path)
             os.makedirs(os.path.dirname(full_path), exist_ok=True)
-            save_model(best_model, full_path)
+            joblib.dump(best_model, full_path)
+            logger.info(f"Bot {bot_id}: Model saved to {full_path}")
+
                 
             # 5. Calculate Comparison Metrics (Model vs Buy & Hold) on TEST set
             # Buy & Hold Return
@@ -267,7 +275,7 @@ class BotInterface:
             
             # Return True and the result dict including path and metrics
             return True, {
-                'model_path': filename,
+                'model_path': rel_path,
                 'metrics': metrics,
                 'message': msg
             }
@@ -277,16 +285,10 @@ class BotInterface:
             return None, str(e)
 
     def run_backtest(self, bot_id, start_date=None, end_date=None):
+        # TODO: Implement real backtest using Backtester class.
+        # Currently returns demo/stub data for UI development.
         try:
-            # Mocking backtest execution for UI demo (Parity with main.py workflow)
-            # Real implementation would call strategy.backtest()
-            
-            # Simulating some processing time
             time.sleep(1)
-            
-            # Return dummy data structure compatible with the new Dashboard charts
-            # In a real scenario, this would come from Backtester.run() -> final_df
-            
             return True, {
                 'total_return': '15.5%',
                 'max_drawdown': '-5.2%',

@@ -80,7 +80,7 @@
                         </thead>
                         <tbody>
                             {% for bot in bots %}
-                            <tr>
+                            <tr style="cursor:pointer" onclick="showBotDetail({{ bot.id }})">
                                 <td>#{{ bot.id }}</td>
                                 <td class="fw-bold">{{ bot.name }}</td>
                                 <td>
@@ -98,7 +98,7 @@
                                     class="{{ 'text-success' if bot.pnl >= 0 else 'text-danger' }} fw-bold">{{
                                     "%.2f"|format(bot.pnl) }}%</td>
                                 <td id="runtime-{{ bot.id }}" class="font-monospace small">{{ bot.runtime }}</td>
-                                <td>
+                                <td onclick="event.stopPropagation()">
                                     <div class="btn-group btn-group-sm">
                                         {% if bot.status == 'running' %}
                                         <button class="btn btn-outline-danger"
@@ -188,6 +188,69 @@
                             {% endfor %}
                         </tbody>
                     </table>
+                </div>
+            </div>
+
+            <!-- Global Component: Bot Detail Modal -->
+            <div class="modal fade" id="botDetailModal" tabindex="-1">
+                <div class="modal-dialog modal-xl">
+                    <div class="modal-content bg-dark text-light border-secondary">
+                        <div class="modal-header border-secondary">
+                            <h5 class="modal-title"><i class="fas fa-robot text-warning me-2"></i><span
+                                    id="detailBotName">Bot Details</span></h5>
+                            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                        </div>
+                        <div class="modal-body">
+                            <div class="row mb-3">
+                                <div class="col-md-3">
+                                    <div class="card bg-black border-secondary text-center p-3">
+                                        <div class="text-muted small">Symbol</div>
+                                        <div class="fw-bold fs-5" id="detailSymbol">—</div>
+                                    </div>
+                                </div>
+                                <div class="col-md-3">
+                                    <div class="card bg-black border-secondary text-center p-3">
+                                        <div class="text-muted small">Status</div>
+                                        <div class="fw-bold fs-5" id="detailStatus">—</div>
+                                    </div>
+                                </div>
+                                <div class="col-md-3">
+                                    <div class="card bg-black border-secondary text-center p-3">
+                                        <div class="text-muted small">PnL</div>
+                                        <div class="fw-bold fs-5" id="detailPnl">—</div>
+                                    </div>
+                                </div>
+                                <div class="col-md-3">
+                                    <div class="card bg-black border-secondary text-center p-3">
+                                        <div class="text-muted small">Runtime</div>
+                                        <div class="fw-bold fs-5 font-monospace" id="detailRuntime">—</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="row">
+                                <div class="col-md-5">
+                                    <h6 class="text-warning"><i class="fas fa-list-ul me-1"></i> Trade History</h6>
+                                    <div style="max-height: 300px; overflow-y: auto;">
+                                        <table class="table table-dark table-sm table-hover" id="detailTradesTable">
+                                            <thead>
+                                                <tr>
+                                                    <th>Time</th>
+                                                    <th>Action</th>
+                                                    <th>Price</th>
+                                                    <th>PnL</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody></tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                                <div class="col-md-7">
+                                    <h6 class="text-warning"><i class="fas fa-chart-area me-1"></i> Performance</h6>
+                                    <canvas id="detailChart" height="180"></canvas>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -392,9 +455,31 @@
 </div>
 
 <script>
-    // ... existing ...
+    // =============================================
+    // Runtime Counter (client-side, second-by-second)
+    // =============================================
+    const botStartTimes = {}; // { botId: Date }
 
-    // --- Settings ---
+    function formatRuntime(seconds) {
+        const h = Math.floor(seconds / 3600);
+        const m = Math.floor((seconds % 3600) / 60);
+        const s = Math.floor(seconds % 60);
+        return `${h}h ${m}m ${s}s`;
+    }
+
+    function updateRuntimes() {
+        const now = Date.now();
+        for (const [botId, startDate] of Object.entries(botStartTimes)) {
+            const elapsed = Math.floor((now - startDate) / 1000);
+            const el = document.getElementById(`runtime-${botId}`);
+            if (el) el.innerText = formatRuntime(elapsed);
+        }
+    }
+    setInterval(updateRuntimes, 1000);
+
+    // =============================================
+    // Settings
+    // =============================================
     const settingsModal = document.getElementById('settingsModal');
     settingsModal.addEventListener('show.bs.modal', loadSettings);
 
@@ -417,7 +502,6 @@
             BINANCE_API_SECRET: document.getElementById('binanceSecret').value,
             BREVO_API_KEY: document.getElementById('brevoKey').value
         };
-
         fetch('/api/config', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -434,19 +518,16 @@
             });
     }
 
-    // --- Trades ---
+    // =============================================
+    // Trades Modal (legacy, kept for quick access)
+    // =============================================
     function showTrades(botId) {
-        // Initialize or get modal
         const modalEl = document.getElementById('tradesModal');
         let modal = bootstrap.Modal.getInstance(modalEl);
-        if (!modal) {
-            modal = new bootstrap.Modal(modalEl);
-        }
-
+        if (!modal) modal = new bootstrap.Modal(modalEl);
         const tbody = document.querySelector('#tradesTable tbody');
         tbody.innerHTML = '<tr><td colspan="6" class="text-center">Loading...</td></tr>';
         modal.show();
-
         fetch(`/api/bot/${botId}/trades`)
             .then(res => res.json())
             .then(data => {
@@ -459,15 +540,14 @@
                     data.data.forEach(t => {
                         const action = t.Action || '';
                         const pnl = parseFloat(t.PnL || t['Amount/PnL'] || 0);
-                        const row = `<tr>
+                        tbody.innerHTML += `<tr>
                             <td>${t.Timestamp || t.timestamp}</td>
-                            <td class="${action.includes('BUY') ? 'text-success' : 'text-danger'}">${action}</td>
+                            <td class="${action.includes('BUY') || action.includes('LONG') ? 'text-success' : 'text-danger'}">${action}</td>
                             <td>${t.Price}</td>
                             <td>${parseFloat(t.Quantity).toFixed(6)}</td>
                             <td class="${pnl >= 0 ? 'text-success' : 'text-danger'}">${pnl.toFixed(4)}</td>
                             <td><small>${t.Info}</small></td>
                         </tr>`;
-                        tbody.innerHTML += row;
                     });
                 } else {
                     tbody.innerHTML = `<tr><td colspan="6" class="text-danger">${data.message}</td></tr>`;
@@ -478,7 +558,130 @@
             });
     }
 
+    // =============================================
+    // Bot Detail Modal
+    // =============================================
+    let detailChart = null;
+    let detailRuntimeInterval = null;
+    let detailStartTime = null;
 
+    function showBotDetail(botId) {
+        const modalEl = document.getElementById('botDetailModal');
+        let modal = bootstrap.Modal.getInstance(modalEl);
+        if (!modal) modal = new bootstrap.Modal(modalEl);
+
+        // Reset
+        document.getElementById('detailBotName').textContent = `Bot #${botId}`;
+        document.getElementById('detailSymbol').textContent = '—';
+        document.getElementById('detailStatus').textContent = '—';
+        document.getElementById('detailPnl').textContent = '—';
+        document.getElementById('detailRuntime').textContent = '—';
+        document.querySelector('#detailTradesTable tbody').innerHTML = '<tr><td colspan="4" class="text-center">Loading...</td></tr>';
+        if (detailChart) { detailChart.destroy(); detailChart = null; }
+        if (detailRuntimeInterval) { clearInterval(detailRuntimeInterval); detailRuntimeInterval = null; }
+
+        modal.show();
+
+        // Fetch stats
+        fetch('/api/stats')
+            .then(r => r.json())
+            .then(data => {
+                const stats = data.data && data.data[botId];
+                if (stats) {
+                    document.getElementById('detailSymbol').textContent = stats.symbol || '—';
+                    const statusEl = document.getElementById('detailStatus');
+                    statusEl.textContent = stats.status;
+                    statusEl.className = `fw-bold fs-5 text-${stats.status === 'running' ? 'success' : 'secondary'}`;
+                    const pnlEl = document.getElementById('detailPnl');
+                    pnlEl.textContent = (stats.pnl >= 0 ? '+' : '') + stats.pnl.toFixed(2) + '%';
+                    pnlEl.className = `fw-bold fs-5 ${stats.pnl >= 0 ? 'text-success' : 'text-danger'}`;
+
+                    // Client-side runtime counter
+                    if (stats.start_time_iso) {
+                        detailStartTime = new Date(stats.start_time_iso);
+                        const updateDetailRuntime = () => {
+                            const elapsed = Math.floor((Date.now() - detailStartTime) / 1000);
+                            document.getElementById('detailRuntime').textContent = formatRuntime(elapsed);
+                        };
+                        updateDetailRuntime();
+                        detailRuntimeInterval = setInterval(updateDetailRuntime, 1000);
+                    } else {
+                        document.getElementById('detailRuntime').textContent = stats.runtime || '—';
+                    }
+                }
+            });
+
+        // Fetch trades
+        fetch(`/api/bot/${botId}/trades`)
+            .then(r => r.json())
+            .then(data => {
+                const tbody = document.querySelector('#detailTradesTable tbody');
+                if (data.status === 'success' && data.data.length > 0) {
+                    tbody.innerHTML = '';
+                    const equityCurve = [];
+                    const labels = [];
+                    let running = 10000;
+                    data.data.slice().reverse().forEach(t => {
+                        const action = t.Action || '';
+                        const pnl = parseFloat(t['Amount/PnL'] || 0);
+                        const isClose = action.startsWith('CLOSE');
+                        if (isClose) {
+                            running += pnl;
+                            equityCurve.push(parseFloat(running.toFixed(2)));
+                            labels.push(t.Timestamp ? t.Timestamp.substring(0, 16) : '');
+                        }
+                        const ts = t.Timestamp || '';
+                        tbody.innerHTML += `<tr>
+                            <td><small>${ts.substring(0, 16)}</small></td>
+                            <td class="${action.includes('LONG') || action.includes('BUY') ? 'text-success' : 'text-danger'} small">${action}</td>
+                            <td class="small">$${parseFloat(t.Price || 0).toFixed(4)}</td>
+                            <td class="${pnl >= 0 ? 'text-success' : 'text-danger'} small">${pnl >= 0 ? '+' : ''}${pnl.toFixed(2)}</td>
+                        </tr>`;
+                    });
+                    // Render chart
+                    if (equityCurve.length > 0) {
+                        const ctx = document.getElementById('detailChart').getContext('2d');
+                        detailChart = new Chart(ctx, {
+                            type: 'line',
+                            data: {
+                                labels: labels,
+                                datasets: [{
+                                    label: 'Portfolio Value',
+                                    data: equityCurve,
+                                    borderColor: equityCurve[equityCurve.length - 1] >= equityCurve[0] ? '#28a745' : '#dc3545',
+                                    backgroundColor: equityCurve[equityCurve.length - 1] >= equityCurve[0] ? 'rgba(40,167,69,0.1)' : 'rgba(220,53,69,0.1)',
+                                    fill: true,
+                                    tension: 0.3,
+                                    pointRadius: 3
+                                }]
+                            },
+                            options: {
+                                responsive: true,
+                                plugins: { legend: { display: false } },
+                                scales: {
+                                    x: { ticks: { color: '#aaa', maxTicksLimit: 8 }, grid: { color: '#333' } },
+                                    y: { ticks: { color: '#aaa' }, grid: { color: '#333' } }
+                                }
+                            }
+                        });
+                    }
+                } else {
+                    tbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted">No trades recorded yet.</td></tr>';
+                }
+            })
+            .catch(() => {
+                document.querySelector('#detailTradesTable tbody').innerHTML = '<tr><td colspan="4" class="text-danger">Error loading trades.</td></tr>';
+            });
+
+        // Clear interval when modal closes
+        modalEl.addEventListener('hidden.bs.modal', () => {
+            if (detailRuntimeInterval) { clearInterval(detailRuntimeInterval); detailRuntimeInterval = null; }
+        }, { once: true });
+    }
+
+    // =============================================
+    // Bot Control
+    // =============================================
     function controlBot(botId, action) {
         fetch(`/api/bot/${botId}/${action}`, {
             method: 'POST',
@@ -501,12 +704,8 @@
     function trainBot(botId) {
         const start = document.getElementById(`trainStart${botId}`).value;
         const end = document.getElementById(`trainEnd${botId}`).value;
-
-        // Hide modal
         const modalEl = document.getElementById(`trainModal${botId}`);
-        const modal = bootstrap.Modal.getInstance(modalEl);
-        modal.hide();
-
+        bootstrap.Modal.getInstance(modalEl).hide();
         fetch(`/api/bot/${botId}/train`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -515,21 +714,10 @@
             .then(res => res.json())
             .then(data => {
                 if (data.status === 'success') {
-                    alert('Training started. Redirecting to System Logs...');
-                    // Switch to System Logs tab
-                    // The tab ID is v-pills-terminal-tab based on the layout
-                    const triggerEl = document.querySelector('#v-pills-terminal-tab');
-                    if (triggerEl) {
-                        bootstrap.Tab.getInstance(triggerEl).show(); // or new bootstrap.Tab(triggerEl).show()
-                    } else {
-                        // Fallback if ID is different, try searching by text
-                        const allTabs = document.querySelectorAll('[data-bs-toggle="pill"]');
-                        allTabs.forEach(t => {
-                            if (t.innerText.includes('System Logs') || t.innerText.includes('Terminal')) {
-                                new bootstrap.Tab(t).show();
-                            }
-                        });
-                    }
+                    alert('Training started. Switching to System Logs...');
+                    // Use correct tab button ID
+                    const terminalTab = document.getElementById('terminal-tab');
+                    if (terminalTab) new bootstrap.Tab(terminalTab).show();
                 } else {
                     alert(data.message);
                 }
@@ -541,54 +729,40 @@
         const fileInput = document.getElementById(`fileInput${botId}`);
         const file = fileInput.files[0];
         if (!file) return;
-
         const formData = new FormData();
         formData.append('file', file);
-
-        fetch(`/api/bot/${botId}/upload_model`, {
-            method: 'POST',
-            body: formData
-        })
+        fetch(`/api/bot/${botId}/upload_model`, { method: 'POST', body: formData })
             .then(response => response.json())
             .then(data => {
-                if (data.status === 'success') {
-                    alert(data.message);
-                    location.reload();
-                } else {
-                    alert('Upload failed: ' + data.message);
-                }
+                if (data.status === 'success') { alert(data.message); location.reload(); }
+                else alert('Upload failed: ' + data.message);
             })
-            .catch(error => {
-                console.error('Error:', error);
-                alert('An error occurred during upload.');
-            });
+            .catch(() => alert('An error occurred during upload.'));
     }
 
-    // --- Data Manager ---
+    // =============================================
+    // Data Manager
+    // =============================================
     function fetchData() {
         const symbol = document.getElementById('fetchSymbol').value;
         const start = document.getElementById('fetchStartDate').value;
         const btn = document.getElementById('fetchBtn');
         const resDiv = document.getElementById('fetchResult');
-
         btn.disabled = true;
         btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Fetching...';
         resDiv.innerHTML = '';
-
         fetch('/api/data/fetch', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ symbol: symbol, start_date: start })
+            body: JSON.stringify({ symbol, start_date: start })
         })
             .then(res => res.json())
             .then(data => {
                 btn.disabled = false;
                 btn.innerHTML = '<i class="fas fa-download"></i> Fetch Data';
-                if (data.status === 'success') {
-                    resDiv.innerHTML = `<div class="alert alert-success">${data.message}</div>`;
-                } else {
-                    resDiv.innerHTML = `<div class="alert alert-danger">${data.message}</div>`;
-                }
+                resDiv.innerHTML = data.status === 'success'
+                    ? `<div class="alert alert-success">${data.message}</div>`
+                    : `<div class="alert alert-danger">${data.message}</div>`;
             })
             .catch(err => {
                 btn.disabled = false;
@@ -597,7 +771,9 @@
             });
     }
 
-    // --- Backtest ---
+    // =============================================
+    // Backtest
+    // =============================================
     let backtestChart = null;
 
     function runBacktest() {
@@ -606,11 +782,9 @@
         const end = document.getElementById('backtestEnd').value;
         const btn = document.getElementById('backtestBtn');
         const metricsDiv = document.getElementById('backtestMetrics');
-
         btn.disabled = true;
         btn.textContent = 'Running...';
         metricsDiv.textContent = 'Calculating...';
-
         fetch(`/api/bot/${botId}/backtest`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -620,9 +794,7 @@
             .then(data => {
                 btn.disabled = false;
                 btn.textContent = 'Run Backtest';
-
                 if (data.status === 'success') {
-                    // Metrics
                     const r = data.data;
                     metricsDiv.innerHTML = `
 <div class="row">
@@ -630,79 +802,58 @@
     <div class="col-6"><strong>Max DD:</strong> ${r.max_drawdown}</div>
     <div class="col-6"><strong>Sharpe:</strong> ${r.sharpe_ratio}</div>
     <div class="col-6"><strong>Trades:</strong> ${r.trades}</div>
-</div>
-`;
-
-                    // Render Chart (Dummy data for now if backend doesn't return timeseries)
-                    // Assuming backend returns 'equity_curve' as a list of values?
-                    // bot_interface.run_backtest -> returns (success, metrics).
-                    // We defined metrics in bot_interface task previously. Ideally it returns the daily PnL series.
-                    // For now, let's assume it returns limited data and we might need to enhance backend to return series.
-
-                    // If data.data.equity_curve exists:
-                    if (r.equity_curve) {
-                        renderChart(r.equity_curve);
-                    } else {
-                        metricsDiv.innerHTML += '<div class="text-warning small mt-2">No equity curve data available for chart.</div>';
-                    }
+</div>`;
+                    if (r.equity_curve) renderBacktestChart(r.equity_curve);
+                    else metricsDiv.innerHTML += '<div class="text-warning small mt-2">No equity curve data.</div>';
                 } else {
                     metricsDiv.innerHTML = `<div class="text-danger">${data.message}</div>`;
                 }
             });
     }
 
-    function renderChart(equityCurve) {
+    function renderBacktestChart(equityCurve) {
         const ctx = document.getElementById('backtestChart').getContext('2d');
         if (backtestChart) backtestChart.destroy();
-
         backtestChart = new Chart(ctx, {
             type: 'line',
             data: {
-                labels: equityCurve.map((_, i) => i), // Index as label if no dates
-                datasets: [{
-                    label: 'Equity Curve',
-                    data: equityCurve,
-                    borderColor: '#ffc107',
-                    tension: 0.1
-                }]
+                labels: equityCurve.map((_, i) => i),
+                datasets: [{ label: 'Equity Curve', data: equityCurve, borderColor: '#ffc107', tension: 0.1 }]
             },
-            options: {
-                responsive: true,
-                plugins: {
-                    legend: { display: false }
-                }
-            }
+            options: { responsive: true, plugins: { legend: { display: false } } }
         });
     }
 
-    // --- Terminal / Logs ---
+    // =============================================
+    // Terminal / Logs
+    // =============================================
     setInterval(() => {
-        // Only poll if tab is active
         if (!document.getElementById('terminal').classList.contains('active')) return;
-
         fetch('/api/logs')
             .then(res => res.json())
             .then(data => {
                 if (data.status === 'success') {
                     const container = document.getElementById('logContainer');
                     container.innerHTML = data.logs.join('<br>');
-                    if (document.getElementById('autoScroll').checked) {
+                    if (document.getElementById('autoScroll').checked)
                         container.scrollTop = container.scrollHeight;
-                    }
                 }
             });
     }, 2000);
 
-    // --- Real-Time Bot Stats Polling ---
-    setInterval(() => {
+    // =============================================
+    // Real-Time Bot Stats Polling (updates PnL, status, and seeds start times)
+    // =============================================
+    function pollStats() {
         fetch('/api/stats')
             .then(res => res.json())
             .then(data => {
                 if (data.status === 'success') {
                     for (const [botId, stats] of Object.entries(data.data)) {
-                        // Update Runtime
-                        const runtimeEl = document.getElementById(`runtime-${botId}`);
-                        if (runtimeEl) runtimeEl.innerText = stats.runtime;
+                        // Seed start time for client-side runtime counter
+                        if (stats.start_time_iso && !botStartTimes[botId]) {
+                            botStartTimes[botId] = new Date(stats.start_time_iso);
+                        }
 
                         // Update PnL
                         const pnlEl = document.getElementById(`pnl-${botId}`);
@@ -721,7 +872,9 @@
                     }
                 }
             });
-    }, 1000); // Update every second
+    }
+    pollStats(); // Run immediately on load
+    setInterval(pollStats, 5000); // Then every 5s
 
 </script>
 {% endblock %}

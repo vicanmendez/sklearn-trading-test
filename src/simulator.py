@@ -48,6 +48,10 @@ class RealTimeSimulator:
         self.csv_file = f"simulation_{symbol.replace('/', '_')}.csv"
         self._initialize_csv()
         
+        # Post-Stop-Loss Cooldown State
+        self.stop_loss_cooldown = 0      # ciclos restantes de pausa tras un SL
+        self.consecutive_buy_signals = 0  # señales BUY consecutivas acumuladas
+        
         # Recovery
         self._recover_state()
 
@@ -148,25 +152,69 @@ class RealTimeSimulator:
     def _manage_positions(self, signal, price, timestamp):
         """Manage entry and exit of positions."""
         
-        # Check Stop Loss / Take Profit if in position
+        # 1. Check Stop Loss / Take Profit if in position
         if self.position:
+            position_before = self.position
             self._check_exit_conditions(price, timestamp)
-        
-        # Entry Logic
-        if not self.position:
-            if signal == 1: # Buy Signal
-                self._open_position('LONG', price, timestamp)
-            elif signal == -1: # Sell Signal (for Shorting in Futures)
-                # Only if leverage > 1 implying futures, or if we want to allow shorting.
-                # Assuming Futures Simulator logic ported from babyshark allow Shorts.
-                self._open_position('SHORT', price, timestamp)
-                
-        # Exit Logic based on Signal reversal
-        elif self.position:
+            # If position was just closed by SL, start cooldown
+            if position_before and not self.position:
+                # _close_position sets self.position=None on SL/TP
+                # Check last trade reason to distinguish SL from TP
+                last_reason = self.trades[-1]['reason'] if self.trades else ''
+                if last_reason == 'STOP_LOSS':
+                    cooldown = getattr(self.config, 'COOLDOWN_CANDLES_AFTER_SL', 3)
+                    self.stop_loss_cooldown = cooldown
+                    self.consecutive_buy_signals = 0
+                    logger.warning(
+                        f"⚠️  STOP LOSS ejecutado. Iniciando cooldown de {cooldown} velas. "
+                        f"El bot NO abrirá nuevas posiciones por {cooldown} ciclos."
+                    )
+                    return  # No procesar entrada en este mismo ciclo
+
+        # 2. Exit Logic based on Signal reversal (while in position)
+        if self.position:
             if self.position['type'] == 'LONG' and signal == -1:
                 self._close_position(price, timestamp, 'SIGNAL_REVERSAL')
+                self.consecutive_buy_signals = 0
             elif self.position['type'] == 'SHORT' and signal == 1:
                 self._close_position(price, timestamp, 'SIGNAL_REVERSAL')
+                self.consecutive_buy_signals = 0
+            return  # Estamos en posición, no procesar entrada
+
+        # 3. Si no hay posición, gestionar cooldown y re-entrada
+        if self.stop_loss_cooldown > 0:
+            self.stop_loss_cooldown -= 1
+            self.consecutive_buy_signals = 0  # Resetear confirmación durante cooldown
+            logger.info(
+                f"⏸️  POST-SL COOLDOWN: {self.stop_loss_cooldown} ciclos restantes. "
+                f"Señal actual: {signal}. No se abrirá nueva posición."
+            )
+            return
+
+        # 4. Entry Logic con confirmación de señal
+        required_confirmations = getattr(self.config, 'REENTRY_SIGNAL_CONFIRMATION', 2)
+        
+        if signal == 1:  # Señal alcista
+            self.consecutive_buy_signals += 1
+            if self.consecutive_buy_signals >= required_confirmations:
+                logger.info(
+                    f"✅ Señal BUY confirmada ({self.consecutive_buy_signals}/{required_confirmations} consecutivas). "
+                    f"Abriendo posición LONG."
+                )
+                self._open_position('LONG', price, timestamp)
+                self.consecutive_buy_signals = 0
+            else:
+                logger.info(
+                    f"🔍 Señal BUY detectada ({self.consecutive_buy_signals}/{required_confirmations}). "
+                    f"Esperando confirmación adicional antes de abrir posición."
+                )
+        elif signal == -1:  # Señal bajista sin posición
+            self.consecutive_buy_signals = 0
+            # Solo abrir SHORT si el modo lo permite (leverage > 1 para Futures)
+            if getattr(self.config, 'LEVERAGE', 1) > 1:
+                self._open_position('SHORT', price, timestamp)
+        else:  # Hold
+            self.consecutive_buy_signals = 0
 
     def _open_position(self, type_, price, timestamp):
         """Open a new position."""

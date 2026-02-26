@@ -24,8 +24,10 @@ def get_config_values():
     patterns = {
         'BINANCE_API_KEY': r'BINANCE_API_KEY\s*=\s*[\'"]([^\'"]*)[\'"]',
         'BINANCE_API_SECRET': r'BINANCE_API_SECRET\s*=\s*[\'"]([^\'"]*)[\'"]',
-        'BREVO_API_KEY': r'BREVO_API_KEY\s*=\s*[\'"]([^\'"]*)[\'"]'
+        'BREVO_API_KEY': r'BREVO_API_KEY\s*=\s*[\'"]([^\'"]*)[\'"]',
+        'GEMINI_API_KEY': r'GEMINI_API_KEY\s*=\s*[\'"]([^\'"]*)[\'"]'
     }
+
     
     for key, pattern in patterns.items():
         match = re.search(pattern, content)

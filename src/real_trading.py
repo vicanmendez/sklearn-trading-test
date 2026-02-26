@@ -35,6 +35,11 @@ class RealTradingBot:
         self.running = False
         self.position = None # Track current position state locally
         
+        # Post-Stop-Loss Cooldown State
+        self.stop_loss_cooldown = 0      # ciclos restantes de pausa tras un SL
+        self.consecutive_buy_signals = 0  # señales BUY consecutivas acumuladas
+        self.last_trade_reason = ''       # razón del último cierre
+        
         # Initialize Exchange
         exchange_class = ccxt.binance
         self.exchange = exchange_class({
@@ -183,63 +188,83 @@ class RealTradingBot:
 
     def _manage_trade(self, signal, price):
         """Place orders based on signals."""
-        # Simple logic: 
-        # Buy if Signal 1 and no position.
-        # Sell if Signal -1 and have position (Spot) or Short (Futures).
-        
-        # Check current position from Exchange to be sure
-        # (This is simplified; a robust bot reconciles local state with exchange state repeatedly)
-        
         risk_per_trade = getattr(self.config, 'RISK_PER_TRADE', 0.02)
         balance = self.fetch_balance()
-        amount_to_invest = balance * 0.95 # Use 95% of free balance for testing
+        amount_to_invest = balance * 0.95
         
-        if amount_to_invest < 10: # Binance min trade is usually $10
+        if amount_to_invest < 10:
             logger.warning("Insufficient balance to trade (Min $10).")
             return
 
         quantity = amount_to_invest / price
         
-        # Implementing ACTUAL execution but guarded by user confirmation in logic if needed
-        # For now, I will implement prints and commented out execution as per plan "Real Operations" 
-        # but safely. I will add the calls but commented out with CLEAR INSTRUCTIONS.
+        # --- COOLDOWN POST-STOP LOSS ---
+        if self.stop_loss_cooldown > 0:
+            self.stop_loss_cooldown -= 1
+            self.consecutive_buy_signals = 0
+            logger.info(
+                f"⏸️  POST-SL COOLDOWN: {self.stop_loss_cooldown} ciclos restantes. "
+                f"Señal actual: {signal}. No se operará."
+            )
+            return
+
+        required_confirmations = getattr(self.config, 'REENTRY_SIGNAL_CONFIRMATION', 2)
         
         try:
-            if signal == 1:
-                # Check if we already have a position? 
+            if signal == 1:  # Señal alcista
                 if self.mode == 'SPOT':
                     base_bal = self.exchange.fetch_balance()[self.symbol.split('/')[0]]['free']
-                    if base_bal * price < 10: # effectively no position
-                        logger.info(f"Executing BUY {self.symbol}...")
-                        # UNCOMMENT TO ENABLE REAL TRADING
-                        # self.exchange.create_market_buy_order(self.symbol, quantity)
-                        # self.exchange.create_market_buy_order(self.symbol, quantity)
-                        print(f"⚠️ REAL TRADING MODE: WOULD BUY {quantity:.4f} {self.symbol} NOW. (Uncomment line in src/real_trading.py to enable)")
+                    if base_bal * price < 10:  # Efectivamente sin posición
+                        self.consecutive_buy_signals += 1
+                        if self.consecutive_buy_signals >= required_confirmations:
+                            logger.info(
+                                f"✅ Señal BUY confirmada ({self.consecutive_buy_signals}/{required_confirmations}). "
+                                f"Ejecutando orden."
+                            )
+                            # UNCOMMENT TO ENABLE REAL TRADING
+                            # self.exchange.create_market_buy_order(self.symbol, quantity)
+                            print(f"⚠️ REAL TRADING MODE: WOULD BUY {quantity:.4f} {self.symbol} NOW.")
+                            self.position = {'entry_price': price, 'quantity': quantity, 'type': 'LONG'}
+                            self.last_trade_reason = ''
+                            self.consecutive_buy_signals = 0
+                            self.log_trade("BUY", price, 0, quantity, balance, "Signal Confirmed")
+                        else:
+                            logger.info(
+                                f"🔍 Señal BUY ({self.consecutive_buy_signals}/{required_confirmations}). "
+                                f"Esperando confirmación."
+                            )
+                    else:
+                        self.consecutive_buy_signals = 0  # Ya tenemos posición
                         
-                        # Log if we were to execute
-                        # In real usage, this should happen AFTER order execution confirmation
-                        self.position = {'entry_price': price, 'quantity': quantity, 'type': 'LONG'}
-                        self.log_trade("BUY", price, 0, quantity, balance, "Signal Triggered")
-
-                
-            elif signal == -1:
+            elif signal == -1:  # Señal bajista
+                self.consecutive_buy_signals = 0
                 if self.mode == 'SPOT':
                     base_bal = self.exchange.fetch_balance()[self.symbol.split('/')[0]]['free']
-                    if base_bal * price > 10: # have position
-                        logger.info(f"Executing SELL {self.symbol}...")
+                    if base_bal * price > 10:  # Tenemos posición abierta
+                        logger.info(f"Ejecutando SELL {self.symbol}...")
                         # UNCOMMENT TO ENABLE REAL TRADING
-                        # self.exchange.create_market_sell_order(self.symbol, base_bal) 
-                        # self.exchange.create_market_sell_order(self.symbol, base_bal) 
-                        print(f"⚠️ REAL TRADING MODE: WOULD SELL {base_bal:.4f} {self.symbol} NOW. (Uncomment line in src/real_trading.py to enable)")
+                        # self.exchange.create_market_sell_order(self.symbol, base_bal)
+                        print(f"⚠️ REAL TRADING MODE: WOULD SELL {base_bal:.4f} {self.symbol} NOW.")
                         
-                        pnl = 0 
+                        pnl = 0
                         if self.position and 'entry_price' in self.position:
-                             entry = self.position['entry_price']
-                             pnl = (price - entry) * base_bal
-                             
+                            entry = self.position['entry_price']
+                            pnl = (price - entry) * base_bal
+                        
+                        # Detectar si fue Stop Loss (precio cayó más del SL configurado)
+                        sl_pct = getattr(self.config, 'STOP_LOSS_PCT', 0.02)
+                        if self.position and price < self.position['entry_price'] * (1 - sl_pct):
+                            self.last_trade_reason = 'STOP_LOSS'
+                            cooldown = getattr(self.config, 'COOLDOWN_CANDLES_AFTER_SL', 3)
+                            self.stop_loss_cooldown = cooldown
+                            logger.warning(
+                                f"⚠️  STOP LOSS ejecutado. Cooldown de {cooldown} ciclos activado."
+                            )
+                        
                         self.log_trade("SELL", price, pnl, base_bal, balance, "Signal Triggered")
                         self.position = None
-
+            else:  # Hold
+                self.consecutive_buy_signals = 0
 
         except Exception as e:
             logger.error(f"Order Execution Failed: {e}")

@@ -105,3 +105,30 @@ body {
 .badge {
     padding: 0.5em 0.8em;
 }
+
+/* Market ticker cards — theme-aware */
+.market-card {
+    background-color: var(--card-bg) !important;
+    border: 1px solid var(--border-color) !important;
+    border-top: 2px solid var(--accent-color) !important;
+    color: var(--text-color) !important;
+    border-radius: 8px !important;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.market-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.25);
+}
+
+/* Nav tabs inside market card */
+#marketTabs .nav-link {
+    background: transparent;
+    border-color: transparent;
+}
+
+#marketTabs .nav-link.active {
+    background-color: var(--card-bg);
+    border-color: var(--border-color) var(--border-color) var(--card-bg);
+    color: var(--accent-color) !important;
+}

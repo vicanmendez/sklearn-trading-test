@@ -12,11 +12,22 @@ import collections
 import json
 
 # --- Logging Setup ---
-LOG_BUFFER = collections.deque(maxlen=200)
+LOG_BUFFER = collections.deque(maxlen=500)
 
 class ListHandler(logging.Handler):
+    # Patterns to skip from the in-memory buffer (noisy HTTP access logs)
+    _SKIP_PATTERNS = (
+        '"GET /api/stats ',
+        '"GET /api/logs ',
+        '"GET /api/market ',
+        'GET /static/',
+        'LegacyAPIWarning',
+    )
     def emit(self, record):
         try:
+            msg = record.getMessage()
+            if any(p in msg for p in self._SKIP_PATTERNS):
+                return  # Skip noisy HTTP logs from UI buffer
             log_entry = self.format(record)
             LOG_BUFFER.append(log_entry)
         except Exception:
@@ -38,16 +49,35 @@ if not logger.handlers:
     console_handler.setFormatter(formatter)
     logger.addHandler(console_handler)
 
-# Redirect stdout/stderr to Logger
+# Redirect stdout/stderr to Logger with a Re-entrancy Guard
+import threading as _threading
+
 class StreamToLogger(object):
+    _local = _threading.local()
+
     def __init__(self, logger, level=logging.INFO):
         self.logger = logger
         self.level = level
         self.linebuf = ''
 
     def write(self, buf):
-        for line in buf.rstrip().splitlines():
-            self.logger.log(self.level, line.rstrip())
+        # Prevent infinite recursion if logging itself triggers a write to stdout/stderr
+        if getattr(self._local, 'is_logging', False):
+            # If we are already logging, write directly to the original stream to avoid loop
+            if self.level == logging.ERROR:
+                sys.__stderr__.write(buf)
+            else:
+                sys.__stdout__.write(buf)
+            return
+
+        self._local.is_logging = True
+        try:
+            for line in buf.rstrip().splitlines():
+                clean_line = line.rstrip()
+                if clean_line:
+                    self.logger.log(self.level, clean_line)
+        finally:
+            self._local.is_logging = False
 
     def flush(self):
         pass
@@ -93,23 +123,9 @@ from db_models import User, Bot
 def load_user(user_id):
     return User.query.get(int(user_id))
 
-# ... imports ...
 from bot_interface import bot_interface
-# We need to import save_model from src.models. 
-# Since bot_interface setup sys.path, we can try importing here? 
-# OR exposing save_model via bot_interface.
-# Let's import directly since sys.path modification in bot_interface might not affect app.py unless bot_interface runs first.
-# actually app.py imports bot_interface at global scope, so sys.path matches.
-import sys
-import os
 sys.path.append(os.path.join(os.path.dirname(os.path.dirname(__file__)), 'src'))
 from models import save_model
-
-import json
-
-# ... (rest of imports)
-
-# ... (app config)
 
 # Routes
 @app.route('/')
@@ -154,9 +170,215 @@ def landing():
         
         active_bots_data.append(bot_data)
 
-    return render_template('landing.html', market_data=market_data, active_bots=active_bots_data)
+    return render_template('landing.html', active_bots=active_bots_data)
+
+# -------------------------------------------------------
+# Market Data API (crypto + stocks/ETFs, cached 60s)
+# -------------------------------------------------------
+_market_cache = {'data': None, 'ts': 0}
+_MARKET_CACHE_TTL = 60  # seconds
+
+STOCK_TICKERS = [
+    {'symbol': 'AAPL',  'name': 'Apple',      'type': 'stock'},
+    {'symbol': 'MSFT',  'name': 'Microsoft',  'type': 'stock'},
+    {'symbol': 'GOOGL', 'name': 'Alphabet',   'type': 'stock'},
+    {'symbol': 'AMZN',  'name': 'Amazon',     'type': 'stock'},
+    {'symbol': 'NVDA',  'name': 'NVIDIA',     'type': 'stock'},
+    {'symbol': 'SPY',   'name': 'S&P 500 ETF','type': 'etf'},
+    {'symbol': 'QQQ',   'name': 'Nasdaq ETF', 'type': 'etf'},
+    {'symbol': 'GLD',   'name': 'Gold ETF',   'type': 'etf'},
+]
+
+CRYPTO_IDS = ['bitcoin', 'ethereum', 'binancecoin', 'solana', 'ripple']
+
+@app.route('/api/market')
+def api_market():
+    import time as _time
+    now = _time.time()
+    if _market_cache['data'] and (now - _market_cache['ts']) < _MARKET_CACHE_TTL:
+        return jsonify({'status': 'success', 'data': _market_cache['data'], 'cached': True})
+
+    result = {'crypto': [], 'stocks': [], 'etfs': []}
+
+    # --- Crypto via CoinGecko ---
+    try:
+        url = "https://api.coingecko.com/api/v3/coins/markets"
+        params = {
+            'vs_currency': 'usd',
+            'ids': ','.join(CRYPTO_IDS),
+            'order': 'market_cap_desc',
+            'sparkline': 'false',
+            'price_change_percentage': '24h'
+        }
+        resp = requests.get(url, params=params, timeout=8)
+        for coin in resp.json():
+            result['crypto'].append({
+                'symbol': coin.get('symbol', '').upper(),
+                'name': coin.get('name', ''),
+                'price': coin.get('current_price', 0),
+                'change_24h': round(coin.get('price_change_percentage_24h', 0) or 0, 2),
+                'type': 'crypto'
+            })
+    except Exception as e:
+        logger.warning(f"CoinGecko fetch failed: {e}")
+
+    # --- Stocks & ETFs via yfinance ---
+    try:
+        import yfinance as yf
+        symbols = [t['symbol'] for t in STOCK_TICKERS]
+        tickers = yf.Tickers(' '.join(symbols))
+        for meta in STOCK_TICKERS:
+            sym = meta['symbol']
+            try:
+                info = tickers.tickers[sym].fast_info
+                price = round(float(info.last_price), 2)
+                prev  = round(float(info.previous_close), 2)
+                change = round(((price - prev) / prev) * 100, 2) if prev else 0.0
+                bucket = 'etfs' if meta['type'] == 'etf' else 'stocks'
+                result[bucket].append({
+                    'symbol': sym,
+                    'name': meta['name'],
+                    'price': price,
+                    'change_24h': change,
+                    'type': meta['type']
+                })
+            except Exception as inner_e:
+                logger.warning(f"yfinance {sym} failed: {inner_e}")
+    except Exception as e:
+        logger.warning(f"yfinance fetch failed: {e}")
+
+    _market_cache['data'] = result
+    _market_cache['ts'] = now
+    return jsonify({'status': 'success', 'data': result, 'cached': False})
+
+
+# -------------------------------------------------------
+# Market Insights API (Fear & Greed + AI Analysis, cached 1h)
+# -------------------------------------------------------
+_insights_cache = {'data': None, 'ts': 0}
+_INSIGHTS_CACHE_TTL = 3600  # 1 hour
+
+def _vix_to_fear_greed(vix: float) -> dict:
+    """Convert VIX value to a 0-100 fear/greed score for stocks."""
+    # VIX: <12 = extreme greed, 12-17 = greed, 17-25 = neutral,
+    #       25-35 = fear, >35 = extreme fear
+    if vix < 12:
+        score, label = 90, 'Extreme Greed'
+    elif vix < 17:
+        score, label = 70, 'Greed'
+    elif vix < 25:
+        score, label = 50, 'Neutral'
+    elif vix < 35:
+        score, label = 30, 'Fear'
+    else:
+        score, label = 10, 'Extreme Fear'
+    return {'value': score, 'label': label, 'vix': round(vix, 2)}
+
+def _fetch_insights_data():
+    """Fetch all insights data (called server-side, result cached 1h)."""
+    import time as _time
+    result = {
+        'fear_greed': {
+            'crypto': {'value': 50, 'label': 'Neutral'},
+            'stocks': {'value': 50, 'label': 'Neutral', 'vix': None}
+        },
+        'ai_analysis': {'text': None, 'generated_at': None}
+    }
+
+    # --- Crypto Fear & Greed (alternative.me) ---
+    try:
+        resp = requests.get('https://api.alternative.me/fng/?limit=1', timeout=6)
+        fng = resp.json()['data'][0]
+        result['fear_greed']['crypto'] = {
+            'value': int(fng['value']),
+            'label': fng['value_classification']
+        }
+    except Exception as e:
+        logger.warning(f"Crypto F&G fetch failed: {e}")
+
+    # --- Stock Sentiment via VIX ---
+    try:
+        import yfinance as yf
+        vix_data = yf.Ticker('^VIX').fast_info
+        vix_val = float(vix_data.last_price)
+        result['fear_greed']['stocks'] = _vix_to_fear_greed(vix_val)
+    except Exception as e:
+        logger.warning(f"VIX fetch failed: {e}")
+
+    # --- Gemini AI Market Analysis ---
+    try:
+        import importlib, sys
+        # Reload config to get latest key
+        if 'config' in sys.modules:
+            import config as _cfg
+            importlib.reload(_cfg)
+        else:
+            import config as _cfg
+        gemini_key = getattr(_cfg, 'GEMINI_API_KEY', '').strip()
+
+        if gemini_key:
+            import google.generativeai as genai
+            genai.configure(api_key=gemini_key)
+            model = genai.GenerativeModel('gemini-3-flash-preview')
+
+            # Build context from cached market data
+            market = _market_cache.get('data') or {}
+            crypto_prices = ', '.join(
+                f"{c['symbol']} ${c['price']:,.2f} ({c['change_24h']:+.1f}%)"
+                for c in market.get('crypto', [])
+            ) or 'unavailable'
+            stock_prices = ', '.join(
+                f"{s['symbol']} ${s['price']:,.2f} ({s['change_24h']:+.1f}%)"
+                for s in market.get('stocks', [])
+            ) or 'unavailable'
+            crypto_fg = result['fear_greed']['crypto']
+            stock_fg  = result['fear_greed']['stocks']
+
+            prompt = f"""You are a concise financial market analyst. Based on the following real-time data, 
+write a brief (3-4 sentences) market panorama in English. Be objective and neutral. 
+Do NOT give investment advice. Consider crypto, stocks and etfs.  make a relationship with the current global situation considering last news and the analyst opinions.
+
+Current data:
+- Crypto prices: {crypto_prices}
+- Crypto Fear & Greed: {crypto_fg['value']}/100 ({crypto_fg['label']})
+- Stock prices: {stock_prices}
+- Stock market sentiment (VIX-based): {stock_fg['value']}/100 ({stock_fg['label']}) | VIX: {stock_fg.get('vix', 'N/A')}
+
+Write only the analysis paragraph, no headers or bullet points."""
+
+            response = model.generate_content(prompt)
+            result['ai_analysis'] = {
+                'text': response.text.strip(),
+                'generated_at': _time.strftime('%Y-%m-%d %H:%M UTC', _time.gmtime())
+            }
+        else:
+            result['ai_analysis'] = {
+                'text': None,
+                'generated_at': None,
+                'error': 'No Gemini API key configured. Add it in Settings.'
+            }
+    except Exception as e:
+        logger.warning(f"Gemini AI analysis failed: {e}")
+        result['ai_analysis'] = {'text': None, 'generated_at': None, 'error': str(e)}
+
+    return result
+
+@app.route('/api/insights')
+def api_insights():
+    import time as _time
+    now = _time.time()
+    if _insights_cache['data'] and (now - _insights_cache['ts']) < _INSIGHTS_CACHE_TTL:
+        return jsonify({'status': 'success', 'data': _insights_cache['data'], 'cached': True})
+
+    # Run fetch in background thread to avoid blocking if called from landing page
+    data = _fetch_insights_data()
+    _insights_cache['data'] = data
+    _insights_cache['ts'] = now
+    return jsonify({'status': 'success', 'data': data, 'cached': False})
+
 
 @app.route('/login', methods=['GET', 'POST'])
+
 def login():
     # ... (login logic) ...
     if request.method == 'POST':
@@ -174,9 +396,11 @@ def login():
 
 # Configure logging
 log_file = os.path.join(os.path.dirname(__file__), 'webapp.log')
-file_handler = logging.FileHandler(log_file)
+file_handler = logging.FileHandler(log_file, encoding='utf-8')
 file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
-logging.getLogger().addHandler(file_handler)
+# Ensure root logger has the file handler but avoid duplicates
+if file_handler not in logging.getLogger().handlers:
+    logging.getLogger().addHandler(file_handler)
 logging.getLogger().setLevel(logging.INFO)
 
 @app.route('/logout')
@@ -185,17 +409,7 @@ def logout():
     logout_user()
     return redirect(url_for('landing'))
 
-@app.route('/api/logs')
-@login_required
-def get_logs():
-    try:
-        if os.path.exists(log_file):
-            with open(log_file, 'r') as f:
-                lines = f.readlines()
-                return jsonify({'status': 'success', 'logs': lines[-100:]}) # Return last 100 lines
-        return jsonify({'status': 'success', 'logs': []})
-    except Exception as e:
-        return jsonify({'status': 'error', 'message': str(e)})
+
 
 @app.route('/api/data/fetch', methods=['POST'])
 @login_required
@@ -536,16 +750,18 @@ def create_initial_data():
         if not User.query.filter_by(username='admin').first():
             admin = User(username='admin', password_hash=generate_password_hash('admin'))
             db.session.add(admin)
-            
-            # Create some dummy bots
-            bot1 = Bot(name='BTC Scalper', status='stopped', config='{"pair": "BTC/USDT", "strategy": "HighVol"}')
-            bot2 = Bot(name='ETH Swing', status='running', config='{"pair": "ETH/USDT", "strategy": "MACD"}')
-            db.session.add(bot1)
-            db.session.add(bot2)
-            
             db.session.commit()
-            logger.info("Initial data created.")
+            logger.info("Initial admin user created.")
 
 if __name__ == '__main__':
     create_initial_data()
+    # Sync zombie bot states: if server restarted, bots marked 'running'/'training' in DB
+    # are no longer actually running (active_bots dict is empty). Mark them 'stopped'.
+    with app.app_context():
+        zombie_bots = Bot.query.filter(Bot.status.in_(['running', 'training'])).all()
+        for zbot in zombie_bots:
+            logger.info(f"[Startup] Bot {zbot.id} ({zbot.name}) was '{zbot.status}' — marking as 'stopped' (server restart)")
+            zbot.status = 'stopped'
+        if zombie_bots:
+            db.session.commit()
     app.run(debug=True, port=5000)
